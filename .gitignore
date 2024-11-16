@@ -1,0 +1,83 @@
+# Системные файлы операционной системы
+.DS_Store
+Thumbs.db
+
+# Локальные конфигурации RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.Rproj
+
+# Папки временных данных
+/data/
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.rds
+
+# Папки кэша
+.cache/
+.Rcache/
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.swp
+*.bak
+
+# Файлы, связанные с компиляцией документов
+*.aux
+*.out
+*.toc
+*.tex
+*.pdf
+
+# Секретные данные и пароли
+*.env
+*.key
+*.pem
+
+# Папки для результатов, изображений и экспортов
+/results/
+/output/
+*.png
+*.jpeg
+*.jpg
+*.svg
+*.gif
+*.pdf
+
+# Временные файлы системы
+~$*
+*.lnk
+
+# Файлы конфигурации IDE
+.idea/
+.vscode/
+
+# Файлы сборки Docker (если используете)
+docker-compose.override.yml
+Dockerfile.*
+
+# Исключить глобальные библиотеки R (если создаются локально)
+Renviron.site
+renv/library/
+
+# Исключить другие временные папки и файлы
+/node_modules/
+
+
+# .gitignore
+# Исключаем временные и системные файлы
+*.Rproj.user
+*.Rhistory
+*.RData
+*.log
+
+# Исключаем папки сгенерированных данных
+draft_files/
+draft.html
+data/
+logs/

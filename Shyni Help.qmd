@@ -1,0 +1,316 @@
+---
+title: "Shiny HELP"
+format: html
+editor: visual
+---
+
+shiny::reactlogShow()
+
+## 1. Схема страницы с боковой панелью
+
+```{r}
+nav_panel(
+  title = "Анализ данных",
+  
+  page_sidebar(
+    
+    # Боковая панель
+    sidebar = sidebar(
+      
+      # Элемент загрузки файла
+      fileInput("file", "Загрузить файл", accept = c(".csv", ".xlsx")),
+      
+      # Карточка с параметрами
+      card(
+        card_header("Параметры"),
+        numericInput("num", "Введите число:", value = 10),
+        selectInput("dataset", "Выберите набор данных:", choices = c("mtcars", "iris")),
+        actionButton("analyze", "Анализировать")
+      )
+    ),
+    
+    # Основная панель
+    layout_column_wrap(
+      width = 1,
+      
+      # Карточка для графика
+      card(
+        card_header("График"),
+        plotOutput("plot"),
+        full_screen = TRUE,
+        min_height = "400px"
+      ),
+      
+      # Карточка для таблицы
+      card(
+        card_header("Таблица"),
+        tableOutput("table"),
+        style = "background-color: #f9f9f9;"
+      )
+    )
+  )
+)
+```
+
+Если не использовать `layout_column_wrap`, карточки (например, для таблиц) будут отображаться друг под другом, занимая всю ширину основной панели. `layout_column_wrap` и другие компоновочные функции (`layout_columns`, `layout_column_wrap`) используются для управления шириной и размещением элементов на основной панели. Без этих функций карточки будут выровнены вертикально.
+
+### Описание структуры и возможных параметров
+
+#### 1. `nav_panel`
+
+-   **Назначение**: Создает вкладку в навигационном меню.
+
+-   **Параметры**:
+
+    -   `title`: Название вкладки, отображаемое в навигационном меню.
+
+    -   **Содержимое**: Можно вложить `page_sidebar`, `card`, или другие элементы, чтобы настроить макет страницы.
+
+#### 2. `page_sidebar`
+
+-   **Назначение**: Создает макет с боковой панелью (sidebar) и основной областью для вывода данных.
+
+-   **Параметры**:
+
+    -   `sidebar`: Определяет содержимое боковой панели, например, элементы управления.
+
+    -   **Содержимое основной панели**: Основное содержимое, выводимое в правой части (например, графики и таблицы), часто организуется с помощью `layout_column_wrap`, `layout_columns`, или `card`.
+
+#### 3. `sidebar`
+
+-   **Назначение**: Определяет содержимое боковой панели, например, элементы ввода и управления.
+
+-   **Возможные параметры**:
+
+    -   **Элементы ввода**:
+
+        -   `fileInput`: Элемент для загрузки файлов.
+
+            -   `inputId`: Уникальный идентификатор.
+
+            -   `label`: Текст, который отображается пользователю.
+
+            -   `accept`: Список поддерживаемых форматов файлов, например, `c(".csv", ".xlsx")`.
+
+        -   `numericInput`: Числовой ввод.
+
+            -   `inputId`, `label`, `value`, `min`, `max`, `step`.
+
+        -   `selectInput`: Выпадающий список для выбора.
+
+            -   `inputId`, `label`, `choices`.
+
+        -   `actionButton`: Кнопка для запуска действия.
+
+            -   `inputId`, `label`.
+
+    -   **Карточки**: Можно вложить элементы в карточки для более структурированного отображения, используя `card` и `card_header`.
+
+#### 4. `card`
+
+-   **Назначение**: Используется для группировки содержимого (например, формы ввода или результаты анализа) и для добавления стиля.
+
+-   **Параметры**:
+
+    -   **Содержимое**: Может включать любые элементы управления (например, `fileInput`, `numericInput`), а также заголовок карточки с помощью `card_header`.
+
+    -   **Параметры отображения**:
+
+        -   `full_screen = TRUE`: Отображение карточки на весь экран.
+
+        -   `min_height`: Минимальная высота карточки (например, `min_height = "400px"`).
+
+        -   `style`: CSS-стиль для настройки карточки (например, `style = "background-color: #f0f0f0;"`).
+
+    -   **`card_header`**: Добавляет заголовок для карточки.
+
+        -   `text`: Текст заголовка.
+
+        -   `class`: Классы CSS для оформления заголовка (например, `class = "bg-primary text-white"`).
+
+#### 5. `layout_column_wrap` и `layout_columns`
+
+-   **Назначение**: Используются для настройки компоновки основной панели.
+
+-   **Параметры**:
+
+    -   `width`: Задает ширину контента в процентах от всей ширины (например, `width = 1` для полной ширины).
+
+    -   **Содержимое**: Можно вложить карточки (`card`) или другие элементы для отображения данных.
+
+## 2. Правильная загрузка файлов с данными
+
+Основные улучшения включают:
+
+1.  **Валидация файлов:**
+
+    -   Проверка существования файла
+
+    -   Проверка формата файла
+
+    -   Проверка наличия необходимых колонок
+
+2.  **Прогресс-бар:**
+
+    -   Визуальное отображение процесса загрузки
+
+    -   Информация о количестве обработанных файлов
+
+3.  **Параллельная обработка:**
+
+    -   Использование `future_map_dfr` для параллельной обработки
+
+    -   Автоматическое управление потоками
+
+4.  **Кэширование:**
+
+    -   Сохранение обработанных данных в кэше
+
+    -   Предотвращение повторной обработки тех же файлов
+
+5.  **Улучшенная обработка ошибок:**
+
+    -   Детальные сообщения об ошибках
+
+    -   Продолжение работы при ошибках в отдельных файлах
+
+6.  **Управление памятью:**
+
+    -   Очистка памяти после обработки
+
+    -   Эффективное использование ресурсов
+
+7.  **Расширенная статистика:**
+
+    -   Подробная информация о загруженных данных
+
+    -   Статистика по обработанным файлам
+
+8.  **Безопасное преобразование типов:**
+
+    -   Обработка NA значений
+
+    -   Защита от ошибок преобразования
+
+Этот код более надежен, эффективен и информативен для пользователя.
+
+```{r}
+# Функция валидации файла
+validate_file <- function(file_path) {
+  tryCatch({
+    # Проверяем, что файл существует и это Excel
+    if (!file.exists(file_path)) return(FALSE)
+    if (!grepl("\\.xlsx$", file_path)) return(FALSE)
+    
+    # Проверяем наличие необходимых колонок
+    required_cols <- c("id_lab", "Kit_Lot", "Date") # добавьте свои обязательные колонки
+    sheet_cols <- names(openxlsx::read.xlsx(file_path, cols = columns_to_load, rows = 1))
+    all(required_cols %in% sheet_cols)
+  }, error = function(e) FALSE)
+}
+
+# Создаем кэш для хранения обработанных данных
+data_cache <- reactiveVal(new.env())
+
+observeEvent(input$folder, {
+  req(input$folder)
+  
+  # Создаем прогресс бар
+  progress <- shiny::Progress$new()
+  progress$set(message = "Обработка файлов", value = 0)
+  
+  output$load_status <- renderText("Начинаем загрузку файлов...")
+  
+  # Регистрируем многопоточность
+  future::plan(future::multisession)
+  
+  tryCatch({
+    # Проверяем валидность файлов
+    valid_files <- input$folder$datapath[sapply(input$folder$datapath, validate_file)]
+    
+    if (length(valid_files) == 0) {
+      stop("Нет валидных файлов для обработки")
+    }
+    
+    # Используем параллельную обработку с индикатором прогресса
+    all_data <- future_map_dfr(valid_files, function(file) {
+      # Проверяем кэш
+      cache_key <- digest::digest(file)
+      cache_env <- data_cache()
+      
+      if (exists(cache_key, envir = cache_env)) {
+        return(get(cache_key, envir = cache_env))
+      }
+      
+      # Загрузка данных
+      df <- openxlsx::read.xlsx(file, cols = columns_to_load, colNames = TRUE)
+      
+      # Немедленное преобразование типов с обработкой ошибок
+      processed_df <- tryCatch({
+        df %>% 
+          mutate(
+            across(where(is.character), ~if_else(is.na(.), "", as.character(.))),
+            across(contains("Date"), ~lubridate::ymd_hms(as.character(.), quiet = TRUE)),
+            across(c(id_lab, Adjustment_Status, Times_Of_Adjustment, 
+                    Bead_Lot, Kit_Lot, Formula_Number), ~as.factor(as.character(.))),
+            file_source = basename(file)
+          )
+      }, error = function(e) {
+        warning(sprintf("Ошибка обработки файла %s: %s", basename(file), e$message))
+        NULL
+      })
+      
+      # Сохраняем в кэш
+      if (!is.null(processed_df)) {
+        assign(cache_key, processed_df, envir = cache_env)
+      }
+      
+      processed_df
+    }, .progress = TRUE)
+    
+    # Проверяем результат
+    if (nrow(all_data) == 0) {
+      stop("Не удалось загрузить данные из файлов")
+    }
+    
+    # Создаем сводные данные
+    processed_data <- all_data %>% 
+      group_by(Kit_Lot) %>%
+      summarise(
+        across(where(is.numeric), list(
+          mean = ~mean(., na.rm = TRUE),
+          sd = ~sd(., na.rm = TRUE),
+          n = ~sum(!is.na(.))
+        )),
+        .groups = 'drop'
+      )
+    
+    # Сохраняем результаты
+    results_data(list(
+      raw_data = all_data,
+      processed_data = processed_data,
+      summary = list(
+        total_files = length(valid_files),
+        processed_files = n_distinct(all_data$file_source),
+        total_records = nrow(all_data),
+        last_update = Sys.time()
+      )
+    ))
+    
+    # Очищаем память
+    gc()
+    
+    output$load_status <- renderText(sprintf(
+      "Загрузка завершена успешно! Обработано файлов: %d, записей: %d",
+      length(valid_files),
+      nrow(all_data)
+    ))
+    
+  }, error = function(e) {
+    output$load_status <- renderText(paste("Ошибка загрузки:", e$message))
+  }, finally = {
+    progress$close()
+    future::plan(future::sequential) # Возвращаемся к последовательной обработке
+  })
+})
+```

@@ -1,0 +1,13 @@
+# Применять автоопределение для текстовых файлов
+* text=auto
+
+# Оставить CSS, HTML и JavaScript файлы в формате LF
+*.css text eol=lf
+*.html text eol=lf
+*.js text eol=lf
+
+# Для бинарных файлов не трогать окончания строк
+*.woff binary
+*.png binary
+*.jpeg binary
+*.xlsx binary
