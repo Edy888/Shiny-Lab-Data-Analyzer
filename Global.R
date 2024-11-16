@@ -1,12 +1,50 @@
+# Основные библиотеки для работы с Shiny
 library(shiny)
 library(bslib)
+
+# Визуализация данных
 library(ggplot2)
 library(plotly)
+
+# Обработка данных
 library(dplyr)
-library(readxl)
+library(tidyr)
+library(purrr)
 library(lubridate)
 library(tidyverse)
+
+# Работа с временными рядами
 library(zoo)
+library(xts)
+
+# Работа с таблицами в интерфейсе
+library(DT)
+
+# Работа с файлами Excel
+library(readxl)
+library(openxlsx)
+
+# Удобство работы со строками
+library(stringr)
+
+# Форматирование чисел и осей графиков
+library(scales)
+
+# Полезные утилиты для очистки данных
+library(janitor)
+
+# Управление конфликтами функций
+library(conflicted)
+
+# Дополнения для интерфейса Shiny
+library(shinyjs)
+library(shinyWidgets)
+library(shinycssloaders)
+
+# Обработка математических операций и форматирование
+library(glue)
+library(magrittr)
+
 
 # Цвета Siemens Healthineers
 sh_colors <- list(
