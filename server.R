@@ -645,5 +645,175 @@ observeEvent(input$reset_upload, {
   showNotification("Данные сброшены", type = "warning")
 })
 
-}
 #_______________________________ **END LOADING Adjustment Data** _____________________________________________|  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#_______________________________ ** START 4PL Modeling ** ______________________________________________________________________________________________________|  
+
+
+
+# 4PL Model
+model_mcd_cps <- function(conc, P1, P2, P3, P4) {
+  P2 + (P1 - P2) / (1 + (conc / P3)^P4)
+}
+
+inverse_model_cps <- function(cps, P1, P2, P3, P4) {
+  P3 * ((P1 - P2) / (cps - P2) - 1)^(1 / P4)
+}
+
+slope_value <- reactive({
+  req(input$adg_high_sh, input$adg_low_sh, input$adg_high_lab, input$adg_low_lab)
+  (input$adg_high_sh - input$adg_low_sh) / (input$adg_high_lab - input$adg_low_lab)
+})
+
+intercept_value <- reactive({
+  req(input$adg_low_sh, input$adg_low_lab)
+  input$adg_low_sh - (slope_value() * input$adg_low_lab)
+})
+
+
+output$mcd_plot <- renderPlotly({
+  req(input$P1, input$P2, input$P3, input$P4, input$conc_min, input$conc_max)
+  
+  cal_conc <- calibrator_concentrations()
+  
+  # Генерация концентраций
+  conc_range <- if (input$x_scale == "log") {
+    10^(seq(log10(input$conc_min), log10(input$conc_max), length.out = 1000))
+  } else {
+    seq(from = input$conc_min, to = input$conc_max, length.out = 1000)
+  }
+  
+  # Расчет значений MCD CPS и Lab CPS
+  mcd_cps <- model_mcd_cps(conc_range, input$P1, input$P2, input$P3, input$P4)
+  lab_cps <- (mcd_cps - intercept_value()) / slope_value()
+  
+  # Создание данных для графика
+  plot_data <- data.frame(
+    Concentration = conc_range,
+    MCD_CPS = mcd_cps,
+    Lab_CPS = lab_cps
+  )
+  
+  # Создание графика с использованием plotly
+  p <- plot_ly() %>%
+    # Основные кривые
+    add_trace(data = plot_data, x = ~Concentration, y = ~MCD_CPS, 
+              type = 'scatter', mode = 'lines', name = 'MCD CPS', 
+              line = list(color = '#009999')) %>%
+    add_trace(data = plot_data, x = ~Concentration, y = ~Lab_CPS, 
+              type = 'scatter', mode = 'lines', name = 'Lab CPS', 
+              line = list(color = '#FF8C00')) %>%
+    
+    # Калибраторы MCD
+    add_trace(x = c(cal_conc$mcd$low$conc, cal_conc$mcd$high$conc),
+              y = c(cal_conc$mcd$low$cps, cal_conc$mcd$high$cps),
+              type = 'scatter', mode = 'lines+markers',
+              name = 'MCD Calibrators',
+              line = list(color = '#009999', dash = 'dot'),
+              marker = list(color = '#009999', size = 10)) %>%
+    
+    # Калибраторы Lab
+    add_trace(x = c(cal_conc$lab$low$conc, cal_conc$lab$high$conc),
+              y = c(cal_conc$lab$low$cps, cal_conc$lab$high$cps),
+              type = 'scatter', mode = 'lines+markers',
+              name = 'Lab Calibrators',
+              line = list(color = '#FF8C00', dash = 'dot'),
+              marker = list(color = '#FF8C00', size = 10))
+  
+  # Настройка осей
+  plotly::layout(p,
+                 xaxis = list(
+                   title = "Concentration", 
+                   type = if (input$x_scale == "log") "log" else "linear"
+                 ),
+                 yaxis = list(title = "CPS"),
+                 showlegend = TRUE
+  )
+})
+
+
+
+
+
+
+# Calculators Outputs
+output$calculated_mcd_cps <- renderText({
+  req(input$input_lab_cps)
+  lab_cps <- as.numeric(input$input_lab_cps)
+  mcd_cps <- lab_cps * slope_value() + intercept_value()
+  sprintf("MCD CPS: %.2f", mcd_cps)
+})
+
+output$calculated_concentration_from_lab <- renderText({
+  req(input$input_lab_cps)
+  lab_cps <- as.numeric(input$input_lab_cps)
+  mcd_cps <- lab_cps * slope_value() + intercept_value()
+  concentration <- inverse_model_cps(mcd_cps, input$P1, input$P2, input$P3, input$P4)
+  sprintf("Concentration: %.6f ng/mL", concentration)
+})
+
+output$calculated_mcd_cps_direct <- renderText({
+  req(input$input_concentration)
+  conc <- as.numeric(input$input_concentration)
+  mcd_cps <- model_mcd_cps(conc, input$P1, input$P2, input$P3, input$P4)
+  sprintf("MCD CPS: %.2f", mcd_cps)
+})
+
+output$calculated_lab_cps <- renderText({
+  req(input$input_concentration)
+  conc <- as.numeric(input$input_concentration)
+  mcd_cps <- model_mcd_cps(conc, input$P1, input$P2, input$P3, input$P4)
+  lab_cps <- (mcd_cps - intercept_value()) / slope_value()
+  sprintf("Lab CPS: %.2f", lab_cps)
+})
+
+
+
+# Добавляем реактивные выражения для расчета концентраций калибраторов
+calibrator_concentrations <- reactive({
+  req(input$adg_low_lab, input$adg_high_lab, 
+      input$adg_low_sh, input$adg_high_sh,
+      input$P1, input$P2, input$P3, input$P4)
+  
+  # Расчет концентраций для лабораторных калибраторов
+  lab_low_mcd_cps <- input$adg_low_lab * slope_value() + intercept_value()
+  lab_high_mcd_cps <- input$adg_high_lab * slope_value() + intercept_value()
+  
+  lab_low_conc <- inverse_model_cps(lab_low_mcd_cps, input$P1, input$P2, input$P3, input$P4)
+  lab_high_conc <- inverse_model_cps(lab_high_mcd_cps, input$P1, input$P2, input$P3, input$P4)
+  
+  # Расчет концентраций для MCD калибраторов
+  mcd_low_conc <- inverse_model_cps(input$adg_low_sh, input$P1, input$P2, input$P3, input$P4)
+  mcd_high_conc <- inverse_model_cps(input$adg_high_sh, input$P1, input$P2, input$P3, input$P4)
+  
+  list(
+    lab = list(
+      low = list(conc = lab_low_conc, cps = input$adg_low_lab),
+      high = list(conc = lab_high_conc, cps = input$adg_high_lab)
+    ),
+    mcd = list(
+      low = list(conc = mcd_low_conc, cps = input$adg_low_sh),
+      high = list(conc = mcd_high_conc, cps = input$adg_high_sh)
+    )
+  )
+})
+#_______________________________ ** END 4PL Modeling ** ______________________________________________________________________________________________________|
+
+
+
+
+}

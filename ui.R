@@ -238,81 +238,68 @@ ui <- page_navbar(
     )
   ),
   
-  # Master Curve Panel
+
   nav_panel(
     title = "Master Curve",
     page_sidebar(
       sidebar = sidebar(
+        width = 400,
         card(
           card_header("Parameters", class = "bg-primary text-white"),
-          div(
-            style = "padding: 1rem;",
-            numericInput("P1", "P1:", value = 3.404367e+19),
-            numericInput("P2", "P2:", value = 61440),
-            numericInput("P3", "P3:", value = 1.280082e+14),
-            numericInput("P4", "P4:", value = -0.9975617),
-            hr(),
-            numericInput("conc_min", "Min Conc:", value = 0.1, min = 0.001),
-            numericInput("conc_max", "Max Conc:", value = 50000, min = 1),
-            hr(),
-            numericInput("adg_low_sh", "Adjustor_Low_MCD, CPS", value = 711703),
-            numericInput("adg_high_sh", "Adjustor_High_MCD, CPS", value = 10993840),
-            numericInput("adg_low_lab", "Adjustor_Low_Lab, CPS", value = 777867),
-            numericInput("adg_high_lab", "Adjustor_High_Lab, CPS", value = 12597374),
-            numericInput("intercept_guide", "Guide Intercept", value = 213510.891)
-          )
-        ),
-        width = "300px"
-      ),
-      
-      layout_column_wrap(
-        width = 1,
-        card(
-          card_header(
-            "Master Curve Analysis Tool",
-            class = "fw-bold fs-4 text-center"
-          ),
           card_body(
-            tags$h5("Features:"),
-            tags$ul(
-              tags$li("Visualize and calculate the master curve based on input parameters"),
-              tags$li("Calculate SLOPE and INTERCEPT"),
-              tags$li("Calculate CPS based on Master Curve Definition"),
-              tags$li("Calculate Concentration using CPS")
-            )
+            numericInput("P1", "P1 (Max CPS):", value = 3.404367e+19, width = "100%"),
+            numericInput("P2", "P2 (Min CPS):", value = 61440, width = "100%"),
+            numericInput("P3", "P3 (EC50):", value = 1.280082e+14, width = "100%"),
+            numericInput("P4", "P4 (Slope):", value = -0.9975617, width = "100%"),
+            hr(),
+            numericInput("conc_min", "Min Concentration:", value = 0.1, min = 0.001, width = "100%"),
+            numericInput("conc_max", "Max Concentration:", value = 50000, min = 1, width = "100%"),
+            hr(),
+            numericInput("adg_low_sh", "Adjustor Low (MCD CPS):", value = 711703, width = "100%"),
+            numericInput("adg_high_sh", "Adjustor High (MCD CPS):", value = 10993840, width = "100%"),
+            numericInput("adg_low_lab", "Adjustor Low (Lab CPS):", value = 777867, width = "100%"),
+            numericInput("adg_high_lab", "Adjustor High (Lab CPS):", value = 12597374, width = "100%"),
+            numericInput("intercept_guide", "Guide Intercept:", value = 213510.891, width = "100%")
           )
-        ),
-        
-        layout_columns(
-          col_widths = c(8, 4),
-          card(
-            full_screen = TRUE,
-            card_header("Master Curve", class = "bg-primary text-white"),
-            card_body(
-              plotlyOutput("mcd_plot", height = "350px"),
-              radioButtons("x_scale", "Scale:",
+        )
+      ),
+      # Main content area
+      card(
+        full_screen = TRUE,
+        style = "min-height: 800px;",
+        card_header("Master Curve Analysis", class = "bg-primary text-white"),
+        card_body(
+          # График
+          plotlyOutput("mcd_plot", height = "600px"),
+          
+          # Контейнер для элементов управления
+          div(
+            style = "display: flex; gap: 20px; align-items: start; margin-top: 20px;",
+            
+            # X-Scale controls
+            div(
+              style = "flex: 0 0 200px;",
+              radioButtons("x_scale", "X-Axis Scale:",
                            choices = c("Original" = "original", "Log" = "log"),
-                           selected = "log",
-                           inline = TRUE)
-            )
-          ),
-          card(
-            full_screen = TRUE,
-            card_header("Adjustors Calculation Results", class = "bg-primary text-white"),
-            card_body(
-              tags$h5("Formula:"),
-              tags$pre(
-                "slope = (adj_mcd_high - adj_mcd_low) / (adj_lab_high - adj_lab_low)
-intercept = adj_mcd_low - (slope * adj_lab_low)"
-              ),
-              card(
-                card_header("Calculated Slope"),
-                textOutput("calculated_slope")
-              ),
-              card(
-                card_header("Calculated Intercept"),
-                textOutput("calculated_intercept")
-              )
+                           selected = "log", inline = TRUE)
+            ),
+            
+            # Laboratory CPS → Concentration
+            div(
+              style = "flex: 1;",
+              h6("Laboratory CPS → Concentration", style = "color: #0d6efd; font-weight: bold;"),
+              numericInput("input_lab_cps", "Enter Laboratory CPS Value:", value = NA, width = "100%"),
+              textOutput("calculated_mcd_cps"),
+              textOutput("calculated_concentration_from_lab")
+            ),
+            
+            # Concentration → CPS
+            div(
+              style = "flex: 1;",
+              h6("Concentration → CPS", style = "color: #0d6efd; font-weight: bold;"),
+              numericInput("input_concentration", "Enter Concentration Value:", value = 10, width = "100%"),
+              textOutput("calculated_mcd_cps_direct"),
+              textOutput("calculated_lab_cps")
             )
           )
         )
