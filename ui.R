@@ -1,6 +1,12 @@
 library(shiny)
-options(shiny.maxRequestSize = 100 * 1024^2)
+library(bslib)
+library(bsicons)
+library(DT)
+library(plotly)
+library(shinycssloaders)
+library(shinyjs)
 
+options(shiny.maxRequestSize = 100 * 1024^2)
 
 ui <- page_navbar(
   theme = my_theme,
@@ -13,7 +19,9 @@ ui <- page_navbar(
         style = "color: #FF8C00; font-size: 18px;"
       )
     ),
+    
     tags$style(HTML("
+      /* Общие стили для форм */
       .form-control, .control-label { 
         font-size: 0.85rem !important;
       }
@@ -21,14 +29,62 @@ ui <- page_navbar(
       .small-text .control-label {
         font-size: 0.85rem !important;
       }
-      .card .selectize-dropdown {
-        position: fixed !important;
-        top: auto !important;
-        left: auto !important;
-        z-index: 9999 !important;
+
+      /* Обновленные стили для selectize */
+      .selectize-dropdown {
+        position: absolute !important;
+        top: 100% !important;
+        left: 0 !important;
+        z-index: 1000 !important;
+        max-width: 300px !important;
+        width: 100% !important;
+        background: #212529 !important;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
       }
-      .card .selectize-control {
+      
+      .selectize-dropdown-content {
+        max-height: 200px;
+        overflow-y: auto;
+        color: #fff !important;
+      }
+
+      .selectize-dropdown .option {
+        color: #fff !important;
+        padding: 8px 12px;
+      }
+
+      .selectize-dropdown .option:hover,
+      .selectize-dropdown .option.active {
+        background-color: #495057 !important;
+      }
+      
+      .selectize-control {
         position: relative !important;
+        max-width: 100%;
+        width: 100%;
+      }
+
+      /* Адаптивный дизайн */
+      @media (max-width: 768px) {
+        .form-control, .control-label {
+          font-size: 0.75rem !important;
+        }
+        .selectize-control {
+          width: 100% !important;
+        }
+      }
+      
+      /* Стили аккордеона */
+      .accordion-body {
+        padding: 1rem;
+      }
+      
+      /* Стили подписей */
+      .control-label {
+        font-weight: 500;
+        margin-bottom: 0.5rem;
       }
     "))
   ),
@@ -38,9 +94,7 @@ ui <- page_navbar(
     title = "Data Upload",
     page_sidebar(
       sidebar = sidebar(
-        width = 470,
-        
-        # Data Import Card
+        width = 500,
         card(
           card_header(
             "Data Import", 
@@ -49,6 +103,7 @@ ui <- page_navbar(
           style = "background-color: #808080;",
           
           accordion(
+            # Test Results Panel
             accordion_panel(
               "Test Results",
               fileInput(
@@ -64,24 +119,54 @@ ui <- page_navbar(
               ),
               div(
                 class = "d-flex gap-2 my-3",
-                actionButton("reset_results_upload", "Reset", 
-                             class = "btn-warning btn-sm"),
-                downloadButton("export_results_data", "Export",
-                               class = "btn-sm")
+                actionButton("reset_results_upload", "Reset", class = "btn-warning btn-sm"),
+                downloadButton("export_results_data", "Export", class = "btn-sm")
               ),
-              textOutput("results_load_status") %>%
+              textOutput("results_load_status") %>% 
                 tagAppendAttributes(class = "text-info small mt-2"),
               verbatimTextOutput("results_summary") %>%
                 tagAppendAttributes(class = "small mt-3")
             ),
             
+            # Result Data Filters Panel
             accordion_panel(
-              "Test Selection",
-              uiOutput("dynamic_test_select"),
-              uiOutput("dynamic_lab_select"),
-              uiOutput("dynamic_kitlot_select")
+              "Result Data Filters",
+              div(
+                style = "max-width: 300px;",
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "test_select", 
+                    "Select Test:", 
+                    choices = NULL, 
+                    multiple = FALSE,
+                    width = "100%"
+                  )
+                ),
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "lab_select", 
+                    "Select Laboratory:", 
+                    choices = NULL, 
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                ),
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "kit_lot_select", 
+                    "Select Kit Lot:", 
+                    choices = NULL, 
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                )
+              )
             ),
             
+            # Calibration Data Panel
             accordion_panel(
               "Calibration Data",
               fileInput(
@@ -97,10 +182,8 @@ ui <- page_navbar(
               ),
               div(
                 class = "d-flex gap-2 my-3",
-                actionButton("reset_upload", "Reset", 
-                             class = "btn-warning btn-sm"),
-                downloadButton("export_results", "Export",
-                               class = "btn-sm")
+                actionButton("reset_upload", "Reset", class = "btn-warning btn-sm"),
+                downloadButton("export_results", "Export", class = "btn-sm")
               ),
               textOutput("calib_load_status") %>%
                 tagAppendAttributes(class = "text-info small mt-2"),
@@ -108,59 +191,146 @@ ui <- page_navbar(
                 tagAppendAttributes(class = "small mt-3")
             ),
             
+            # Calibration Filters Panel
+            accordion_panel(
+              "Calibration Data Filters",
+              div(
+                style = "max-width: 300px;",
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "calib_test_select", 
+                    "Select Test Name:", 
+                    choices = NULL, 
+                    multiple = FALSE,
+                    width = "100%"
+                  )
+                ),
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "calib_kit_lot_select", 
+                    "Select Kit Lot:", 
+                    choices = NULL, 
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                )
+              )
+            ),
+            
+            # Kits Data Panel
             accordion_panel(
               "Kits Data",
               fileInput(
                 "kits_files",
-                span("Upload Kits Files", span(class = "text-muted", "(xlsx)")),
+                span(
+                  "Upload Kits Files",
+                  span(class = "text-muted d-block small", "Max size: 20MB")
+                ),
                 multiple = TRUE,
                 accept = c(".xlsx"),
-                buttonLabel = "Browse..."
+                buttonLabel = "Browse...",
+                width = "100%"
+              ),
+              div(
+                class = "d-flex gap-2 my-3",
+                actionButton("reset_kits_upload", "Reset", class = "btn-warning btn-sm"),
+                downloadButton("export_kits_data", "Export", class = "btn-sm")
+              ),
+              textOutput("kits_load_status") %>%
+                tagAppendAttributes(class = "text-info small mt-2"),
+              verbatimTextOutput("kits_summary") %>%
+                tagAppendAttributes(class = "small mt-3")
+            ),
+            
+            # Kits Filters Panel
+            accordion_panel(
+              "Kits Data Filters",
+              div(
+                style = "max-width: 300px;",
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "kits_test_select", 
+                    "Select Test:", 
+                    choices = NULL, 
+                    multiple = FALSE,
+                    width = "100%"
+                  )
+                ),
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "kits_lot_select", 
+                    "Select Lot:", 
+                    choices = NULL, 
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                ),
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    "kits_manufacturer_select", 
+                    "Select Manufacturer:", 
+                    choices = NULL, 
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                )
               )
             )
           )
         )
       ),
       
-      # Main content
+      # Main content area
       layout_column_wrap(
         width = 1,
         
         # Test Results Card
         card(
           full_screen = TRUE,
-          card_header(
-            "Test Results",
-            class = "bg-primary text-white"
-          ),
+          card_header("Test Results", class = "bg-primary text-white"),
           navset_card_tab(
             nav_panel(
               "Data Table",
-              DTOutput("data_table") %>%
-                withSpinner(type = 4, color = "#0d6efd")
+              card(
+                full_screen = TRUE,
+                card_body(
+                  DTOutput("data_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                )
+              )
             ),
             nav_panel(
               "Daily Tests Plot",
-              plotlyOutput("daily_tests_plot") %>%
-                withSpinner(type = 4, color = "#0d6efd")
+              card(
+                full_screen = TRUE,
+                style = "height: 100vh; width: 100%;",
+                card_body(
+                  style = "height: 100%; width: 100%; padding: 0; margin: 0;",
+                  plotlyOutput("daily_tests_plot", height = "100%", width = "100%") %>%
+                    withSpinner(type = 4, color = "#0d6efd")
+                )
+              )
             ),
             nav_panel(
-              "Statistics",
-              layout_column_wrap(
-                width = 1,
-                card(
-                  card_header("Statistics Plot", class = "bg-primary text-white"),
-                  card_body(
-                    plotlyOutput("test_stats_plot", height = "500px") %>%
-                      withSpinner(type = 4, color = "#0d6efd")
-                  )
-                ),
-                card(
-                  card_header("Statistics Table", class = "bg-primary text-white"),
-                  card_body(
-                    DTOutput("test_stats_table") %>%
-                      withSpinner(type = 4, color = "#0d6efd")
-                  )
+              "Statistics Plot",
+              card(
+                full_screen = TRUE,
+                card_body(
+                  plotlyOutput("test_stats_plot", height = "500px") %>%
+                    withSpinner(type = 4, color = "#0d6efd")
+                )
+              )
+            ),
+            nav_panel(
+              "Statistics Table",
+              card(
+                full_screen = TRUE,
+                card_body(
+                  DTOutput("test_stats_table") %>% withSpinner(type = 4, color = "#0d6efd")
                 )
               )
             )
@@ -170,30 +340,43 @@ ui <- page_navbar(
         # Calibration Data Card
         card(
           full_screen = TRUE,
-          card_header(
-            "Calibration Data",
-            class = "bg-primary text-white"
-          ),
+          card_header("Calibration Data", class = "bg-primary text-white"),
           navset_card_tab(
             nav_panel(
               "Summary by Kits",
-              DTOutput("calib_table2") %>%
-                withSpinner(type = 4, color = "#0d6efd")
+              card(
+                full_screen = TRUE,
+                card_body(
+                  style = "height: 100%; width: 100%; padding: 0; margin: 0;",
+                  DTOutput("calib_table2") %>% withSpinner(type = 4, color = "#0d6efd")
+                )
+              )
             ),
             nav_panel(
               "Detailed Data",
-              DTOutput("calib_table1") %>%
-                withSpinner(type = 4, color = "#0d6efd")
+              card(
+                full_screen = TRUE,
+                card_body(
+                  style = "height: 100%; width: 100%; padding: 0; margin: 0;",
+                  DTOutput("calib_table1") %>% withSpinner(type = 4, color = "#0d6efd")
+                )
+              )
             ),
             nav_panel(
               "Validation",
-              layout_column_wrap(
-                width = 1,
-                plotlyOutput("validation_plot", height = "600px") %>%
-                  withSpinner(type = 4, color = "#0d6efd"),
-                hr(),
-                verbatimTextOutput("validation_details") %>%
-                  tagAppendAttributes(class = "small")
+              card(
+                full_screen = TRUE,
+                card_body(
+                  style = "height: 100%; width: 100%; padding: 0; margin: 0;",
+                  layout_column_wrap(
+                    width = 1,
+                    plotlyOutput("validation_plot", height = "600px", width = "100%") %>%
+                      withSpinner(type = 4, color = "#0d6efd"),
+                    hr(),
+                    verbatimTextOutput("validation_details") %>%
+                      tagAppendAttributes(class = "small")
+                  )
+                )
               )
             )
           )
@@ -202,34 +385,43 @@ ui <- page_navbar(
         # Kits Information Card
         card(
           full_screen = TRUE,
-          card_header(
-            "Kits Information",
-            class = "bg-primary text-white"
-          ),
+          card_header("Kits Data", class = "bg-primary text-white"),
           navset_card_tab(
             nav_panel(
-              "Basic Info",
-              DTOutput("kits_info_table") %>%
-                withSpinner(type = 4, color = "#0d6efd")
+              "Data Table",
+              card(
+                full_screen = TRUE,
+                card_body(
+                  DTOutput("kits_data_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                )
+              )
             ),
             nav_panel(
               "Usage Analysis",
-              layout_column_wrap(
-                width = 1,
-                plotlyOutput("kits_usage_plot") %>%
-                  withSpinner(type = 4, color = "#0d6efd"),
-                DTOutput("kits_usage_table") %>%
-                  withSpinner(type = 4, color = "#0d6efd")
+              card(
+                full_screen = TRUE,
+                card_body(
+                  layout_column_wrap(
+                    width = 1,
+                    plotlyOutput("kits_usage_plot", height = "600px", width = "100%") %>%
+                      withSpinner(type = 4, color = "#0d6efd"),
+                    DTOutput("kits_usage_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                  )
+                )
               )
             ),
             nav_panel(
               "Performance Metrics",
-              layout_column_wrap(
-                width = 1,
-                plotlyOutput("kits_performance_plot") %>%
-                  withSpinner(type = 4, color = "#0d6efd"),
-                DTOutput("kits_performance_table") %>%
-                  withSpinner(type = 4, color = "#0d6efd")
+              card(
+                full_screen = TRUE,
+                card_body(
+                  layout_column_wrap(
+                    width = 1,
+                    plotlyOutput("kits_performance_plot", height = "600px", width = "100%") %>%
+                      withSpinner(type = 4, color = "#0d6efd"),
+                    DTOutput("kits_performance_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                  )
+                )
               )
             )
           )
@@ -238,14 +430,24 @@ ui <- page_navbar(
     )
   ),
   
-
+  # Master Curve Panel
   nav_panel(
     title = "Master Curve",
     page_sidebar(
       sidebar = sidebar(
-        width = 400,
+        width = 350,
         card(
-          card_header("Parameters", class = "bg-primary text-white"),
+          card_header(
+            div(
+              class = "d-flex align-items-center gap-2",
+              "Parameters",
+              bsicons::bs_icon("info-circle-fill", class = "text-white") %>%
+                tooltip(
+                  "Здесь вы можете настроить параметры 4PL модели и калибровочные значения"
+                )
+            ),
+            class = "bg-primary text-white"
+          ),
           card_body(
             numericInput("P1", "P1 (Max CPS):", value = 3.404367e+19, width = "100%"),
             numericInput("P2", "P2 (Min CPS):", value = 61440, width = "100%"),
@@ -269,22 +471,15 @@ ui <- page_navbar(
         style = "min-height: 800px;",
         card_header("Master Curve Analysis", class = "bg-primary text-white"),
         card_body(
-          # График
           plotlyOutput("mcd_plot", height = "600px"),
-          
-          # Контейнер для элементов управления
           div(
             style = "display: flex; gap: 20px; align-items: start; margin-top: 20px;",
-            
-            # X-Scale controls
             div(
               style = "flex: 0 0 200px;",
               radioButtons("x_scale", "X-Axis Scale:",
                            choices = c("Original" = "original", "Log" = "log"),
                            selected = "log", inline = TRUE)
             ),
-            
-            # Laboratory CPS → Concentration
             div(
               style = "flex: 1;",
               h6("Laboratory CPS → Concentration", style = "color: #0d6efd; font-weight: bold;"),
@@ -292,8 +487,6 @@ ui <- page_navbar(
               textOutput("calculated_mcd_cps"),
               textOutput("calculated_concentration_from_lab")
             ),
-            
-            # Concentration → CPS
             div(
               style = "flex: 1;",
               h6("Concentration → CPS", style = "color: #0d6efd; font-weight: bold;"),

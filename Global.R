@@ -45,6 +45,8 @@ library(shinycssloaders)
 library(glue)
 library(magrittr)
 
+conflicted::conflicts_prefer(dplyr::filter)
+
 
 # Цвета Siemens Healthineers
 sh_colors <- list(
