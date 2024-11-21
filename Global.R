@@ -47,6 +47,13 @@ library(magrittr)
 
 conflicted::conflicts_prefer(dplyr::filter)
 
+library(DBI)
+library(odbc)
+library(rsconnect)
+
+MAX_FILE_SIZE <- options(shiny.maxRequestSize = 200 * 1024^2)  # 200 MB
+
+options(shiny.maxRequestSize = 200 * 1024^2)  # 200 MB
 
 # Цвета Siemens Healthineers
 sh_colors <- list(
@@ -78,14 +85,4 @@ my_theme <- bs_theme(
   "card-title-font-size" = "1rem",    # Размер шрифта заголовков карточек
   "navbar-font-size" = "1rem",        # Размер шрифта в навигационной панели
   "table-font-size" = "0.8rem"        # Размер шрифта в таблицах
-)
-
-# Группировка тестов
-tests <- list(
-  "Thyroid" = c("TSH", "TSI", "T3", "FT3", "TT4", "TBG"),
-  "Autoimmune" = c("ATA", "ATG", "TG"),
-  "Cardiac" = c("ECM", "TXP", "cTL"),
-  "Viral" = c("VCG", "CVG", "HVG", "RUB", "RUM"),
-  "Other" = c("RTH", "TU", "F4", "VF4", "TK9", "ECP", "SPE", "TIE", "TOP", "SP4",
-              "SPG", "FER", "FOL", "EPN", "VB", "INS", "PEP", "GAS", "BMG", "ALB")
 )

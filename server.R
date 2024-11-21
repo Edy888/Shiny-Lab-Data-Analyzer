@@ -2,8 +2,28 @@
 
 server <- function(input, output, session) {
 
+  library(DBI)
+  library(RMySQL)
   
-  MAX_FILE_SIZE <- 20 * 1024^2  # 20MB
+  # Подключение к базе данных MySQL
+  db_connection <- dbConnect(
+    MySQL(),
+    dbname = "shiny_app_db",
+    host = "127.0.0.1",      # Или IP вашего сервера
+    port = 3306,
+    user = "remote_user",
+    password = "shinylab2024"
+  )
+  
+  onStop(function() {
+    dbDisconnect(db_connection)  # Закрыть соединение при завершении работы
+  })
+  
+  
+  
+  
+  MAX_FILE_SIZE <- options(shiny.maxRequestSize = 200 * 1024^2)  # 200 MB
+  
   rv_results <- reactiveValues(
     proceed_data = NULL,           # отсортирован с правильными форматами и столбцами (из all_data): output$results_summary, filters (KITS,Labs, Test)
     all_display_data = NULL        # сводная статистика данных из proceed_data (output$daily_tests_plot)
@@ -13,9 +33,6 @@ server <- function(input, output, session) {
   data_cache <- reactiveVal(new.env())
 
 
-  
-  
-  
 
 #_______________________________ ** Work with RESULTS DATA ** ________________________________________________________________________________________________________|   
 
@@ -1318,6 +1335,81 @@ calibrator_concentrations <- reactive({
 })
 #_______________________________ ** END 4PL Modeling ** ______________________________________________________________________________________________________|
 
+
+
+#________________ 1.1 File validation function __________________________________|
+
+validate_db_file <- function(file_path) {
+  tryCatch({
+    # Проверяем, существует ли файл и имеет ли правильное расширение
+    if (!file.exists(file_path)) return(FALSE)
+    if (!grepl("\\.(mdb|accdb)$", file_path, ignore.case = TRUE)) return(FALSE)
+    
+    # Проверяем, возможно ли установить соединение с файлом базы данных
+    conn <- DBI::dbConnect(odbc::odbc(), .connection_string = paste0("Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=", file_path))
+    DBI::dbDisconnect(conn)
+    
+    TRUE
+  }, error = function(e) FALSE)
+}
+
+#_________________________________________________________________________________|  
+
+
+
+
+
+###_______________________________DATA BASES_____________________________________________|
+
+
+#__________________ 1.2. Загрузка и обработка файлов  ____________________________|
+
+
+# Реактивные значения
+rv_results <- reactiveValues(proceed_data = NULL, table_data = NULL)
+
+# Обработка Access файла
+observeEvent(input$db_files, {
+  req(input$db_files)
+  file_path <- input$db_files$datapath[1]
+  tryCatch({
+    data <- process_access_file(file_path)
+    tables <- names(data)
+    rv_results$table_data <- data
+    output$table_selection <- renderUI({
+      selectInput("selected_table", "Select Table:", choices = tables, selected = tables[1])
+    })
+    output$load_status <- renderText("File processed successfully!")
+  }, error = function(e) {
+    output$load_status <- renderText(paste("Error processing file:", e$message))
+  })
+})
+
+# Отображение данных таблицы
+observeEvent(input$selected_table, {
+  req(rv_results$table_data, input$selected_table)
+  table_name <- input$selected_table
+  rv_results$proceed_data <- rv_results$table_data[[table_name]]
+  output$data_table <- DT::renderDT({
+    datatable(rv_results$proceed_data)
+  })
+})
+
+# Загрузка данных в MySQL
+observeEvent(input$upload_to_sql, {
+  req(rv_results$proceed_data)
+  conn <- mysql_conn()
+  tryCatch({
+    dbWriteTable(conn, "uploaded_data", rv_results$proceed_data, append = TRUE, row.names = FALSE)
+    showNotification("Data uploaded to MySQL successfully!", type = "message")
+  }, error = function(e) {
+    showNotification(paste("Error uploading to MySQL:", e$message), type = "error")
+  }, finally = {
+    dbDisconnect(conn)
+  })
+})
+
+#______________________________________________________________________________________|
 
 
 

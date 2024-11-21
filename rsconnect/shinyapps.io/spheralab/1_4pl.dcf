@@ -1,0 +1,10 @@
+name: 1_4pl
+title:
+username: spheralab
+account: spheralab
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 13391366
+bundleId: 9387927
+url: https://spheralab.shinyapps.io/1_4pl/
+version: 1

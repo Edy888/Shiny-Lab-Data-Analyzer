@@ -1,3 +1,20 @@
+
+#Напиши все составляющие, которые мне нужны.
+#Здесь описаны все особенности:
+  
+#1. есть приложение Shiny
+#2. для развертывания буду использовать shinyapps.io
+#3. база данных находится в My SQL 
+#4. есть домен: shinylab.pro (godaddy)
+#5. нет белого IP для проброса портов и удаленного подключения
+#6. Цель: любой пользователь может зайти на сайт и использовать приложение. При загрузке своей базы данных (.accdb) пользователем - данные по скрипту в коде приложения должны подгрузиться в мою базу данных MySQL : shiny_app_db.
+#- после этого данные возвращаются в приложение в зависмости от фильтров которые выбирает пользователь.
+#Также проиллюстрируй всю схему для успешного развертывания приложения с такими особенностями
+
+# [Пользователь] --> [Домен (shinylab.pro)] --> [shinyapps.io] --> [Shiny-приложение] --> [MySQL-сервер]
+
+
+
 library(shiny)
 library(bslib)
 library(bsicons)
@@ -5,8 +22,12 @@ library(DT)
 library(plotly)
 library(shinycssloaders)
 library(shinyjs)
+library(shiny.i18n)     # translation
+library(rsconnect)
+source("global.R")
 
-options(shiny.maxRequestSize = 100 * 1024^2)
+
+
 
 ui <- page_navbar(
   theme = my_theme,
@@ -19,7 +40,7 @@ ui <- page_navbar(
         style = "color: #FF8C00; font-size: 18px;"
       )
     ),
-    
+
     tags$style(HTML("
       /* Общие стили для форм */
       .form-control, .control-label { 
@@ -103,51 +124,59 @@ ui <- page_navbar(
           style = "background-color: #808080;",
           
           accordion(
-            # Test Results Panel
+            # Unified Data Upload Panel
             accordion_panel(
-              "Test Results",
+              "Data Upload",
               fileInput(
-                "results_files",
+                "db_files",
                 span(
-                  "Upload Test Results Files",
-                  span(class = "text-muted d-block small", "Max size: 20MB")
+                  "Upload Access Files (.mdb, .accdb)",
+                  span(class = "text-muted d-block small", "Max size: 100MB")
                 ),
                 multiple = TRUE,
-                accept = c(".xlsx"),
+                accept = c(".mdb", ".accdb"),
                 buttonLabel = "Browse...",
                 width = "100%"
               ),
+              
+              uiOutput("table_selection"),  # Динамический выбор таблицы
+              
               div(
                 class = "d-flex gap-2 my-3",
-                actionButton("reset_results_upload", "Reset", class = "btn-warning btn-sm"),
-                downloadButton("export_results_data", "Export", class = "btn-sm")
+                actionButton("reset_upload", "Reset", class = "btn-warning btn-sm"),
+                downloadButton("export_combined_data", "Export Data", class = "btn-sm")
               ),
-              textOutput("results_load_status") %>% 
+              textOutput("load_status") %>% 
                 tagAppendAttributes(class = "text-info small mt-2"),
-              verbatimTextOutput("results_summary") %>%
-                tagAppendAttributes(class = "small mt-3")
+              verbatimTextOutput("summary") %>%
+                tagAppendAttributes(class = "small mt-3"),
+              actionButton("upload_to_sql", "Upload to SQL", class = "btn-success btn-sm"),
+              textOutput("upload_status") %>% 
+                tagAppendAttributes(class = "text-success small mt-2")
+              
+              
             ),
             
-            # Result Data Filters Panel
+            # Unified Filters Panel
             accordion_panel(
-              "Result Data Filters",
+              "Data Filters",
               div(
                 style = "max-width: 300px;",
                 div(
                   class = "mb-3",
                   selectInput(
-                    "test_select", 
-                    "Select Test:", 
+                    "sn_select", 
+                    "Select SN:", 
                     choices = NULL, 
-                    multiple = FALSE,
+                    multiple = TRUE,
                     width = "100%"
                   )
                 ),
                 div(
                   class = "mb-3",
                   selectInput(
-                    "lab_select", 
-                    "Select Laboratory:", 
+                    "test_select", 
+                    "Select Test Name:", 
                     choices = NULL, 
                     multiple = TRUE,
                     width = "100%"
@@ -162,120 +191,14 @@ ui <- page_navbar(
                     multiple = TRUE,
                     width = "100%"
                   )
-                )
-              )
-            ),
-            
-            # Calibration Data Panel
-            accordion_panel(
-              "Calibration Data",
-              fileInput(
-                "calib_files",
-                span(
-                  "Upload Calibration Files",
-                  span(class = "text-muted d-block small", "Max size: 20MB")
-                ),
-                multiple = TRUE,
-                accept = c(".xlsx"),
-                buttonLabel = "Browse...",
-                width = "100%"
-              ),
-              div(
-                class = "d-flex gap-2 my-3",
-                actionButton("reset_upload", "Reset", class = "btn-warning btn-sm"),
-                downloadButton("export_results", "Export", class = "btn-sm")
-              ),
-              textOutput("calib_load_status") %>%
-                tagAppendAttributes(class = "text-info small mt-2"),
-              verbatimTextOutput("validation_summary") %>%
-                tagAppendAttributes(class = "small mt-3")
-            ),
-            
-            # Calibration Filters Panel
-            accordion_panel(
-              "Calibration Data Filters",
-              div(
-                style = "max-width: 300px;",
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "calib_test_select", 
-                    "Select Test Name:", 
-                    choices = NULL, 
-                    multiple = FALSE,
-                    width = "100%"
-                  )
                 ),
                 div(
                   class = "mb-3",
-                  selectInput(
-                    "calib_kit_lot_select", 
-                    "Select Kit Lot:", 
-                    choices = NULL, 
-                    multiple = TRUE,
-                    width = "100%"
-                  )
-                )
-              )
-            ),
-            
-            # Kits Data Panel
-            accordion_panel(
-              "Kits Data",
-              fileInput(
-                "kits_files",
-                span(
-                  "Upload Kits Files",
-                  span(class = "text-muted d-block small", "Max size: 20MB")
-                ),
-                multiple = TRUE,
-                accept = c(".xlsx"),
-                buttonLabel = "Browse...",
-                width = "100%"
-              ),
-              div(
-                class = "d-flex gap-2 my-3",
-                actionButton("reset_kits_upload", "Reset", class = "btn-warning btn-sm"),
-                downloadButton("export_kits_data", "Export", class = "btn-sm")
-              ),
-              textOutput("kits_load_status") %>%
-                tagAppendAttributes(class = "text-info small mt-2"),
-              verbatimTextOutput("kits_summary") %>%
-                tagAppendAttributes(class = "small mt-3")
-            ),
-            
-            # Kits Filters Panel
-            accordion_panel(
-              "Kits Data Filters",
-              div(
-                style = "max-width: 300px;",
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "kits_test_select", 
-                    "Select Test:", 
-                    choices = NULL, 
-                    multiple = FALSE,
-                    width = "100%"
-                  )
-                ),
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "kits_lot_select", 
-                    "Select Lot:", 
-                    choices = NULL, 
-                    multiple = TRUE,
-                    width = "100%"
-                  )
-                ),
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "kits_manufacturer_select", 
-                    "Select Manufacturer:", 
-                    choices = NULL, 
-                    multiple = TRUE,
+                  dateRangeInput(
+                    "date_range", 
+                    "Select Date Range:", 
+                    start = Sys.Date() - 30,
+                    end = Sys.Date(),
                     width = "100%"
                   )
                 )
@@ -284,6 +207,7 @@ ui <- page_navbar(
           )
         )
       ),
+      
       
       # Main content area
       layout_column_wrap(
@@ -297,7 +221,6 @@ ui <- page_navbar(
             nav_panel(
               "Data Table",
               card(
-                full_screen = TRUE,
                 card_body(
                   DTOutput("data_table") %>% withSpinner(type = 4, color = "#0d6efd")
                 )
@@ -306,7 +229,6 @@ ui <- page_navbar(
             nav_panel(
               "Daily Tests Plot",
               card(
-                full_screen = TRUE,
                 style = "height: 100vh; width: 100%;",
                 card_body(
                   style = "height: 100%; width: 100%; padding: 0; margin: 0;",
@@ -318,7 +240,6 @@ ui <- page_navbar(
             nav_panel(
               "Statistics Plot",
               card(
-                full_screen = TRUE,
                 card_body(
                   plotlyOutput("test_stats_plot", height = "500px") %>%
                     withSpinner(type = 4, color = "#0d6efd")
@@ -432,7 +353,7 @@ ui <- page_navbar(
   
   # Master Curve Panel
   nav_panel(
-    title = "Master Curve",
+    title = "Master Curve Calculation",
     page_sidebar(
       sidebar = sidebar(
         width = 350,
