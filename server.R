@@ -1,25 +1,220 @@
 # Result: Data Page 1.1  
+conflicted::conflicts_prefer(plotly::layout)
+
+rv_results <- reactiveValues(
+  proceed_data = NULL,           # отсортирован с правильными форматами и столбцами (из all_data): output$results_summary, filters (KITS,Labs, Test)
+  all_display_data = NULL,       # сводная статистика данных из proceed_data (output$daily_tests_plot)
+  filtered_data = NULL
+)
+
+
+
+
+
+
+
+
 
 server <- function(input, output, session) {
 
+MAX_FILE_SIZE <- 20 * 1024^2  # 20MB
   
-  MAX_FILE_SIZE <- 20 * 1024^2  # 20MB
-  rv_results <- reactiveValues(
-    proceed_data = NULL,           # отсортирован с правильными форматами и столбцами (из all_data): output$results_summary, filters (KITS,Labs, Test)
-    all_display_data = NULL        # сводная статистика данных из proceed_data (output$daily_tests_plot)
-  )
-  
-  # Initialize reactive values
-  data_cache <- reactiveVal(new.env())
-
+# Initialize reactive values
+data_cache <- reactiveVal(new.env())
 
   
+#---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+#_______________________________ ** START 4PL Modeling ** ______________________________________________________________________________________________________|  
+#_______________________________________________________________________________________________________________________________________________________________|
+  
+  
+  # 4PL Model
+  model_mcd_cps <- function(conc, P1, P2, P3, P4) {
+    P2 + (P1 - P2) / (1 + (conc / P3)^P4)
+  }
+  
+  inverse_model_cps <- function(cps, P1, P2, P3, P4) {
+    P3 * ((P1 - P2) / (cps - P2) - 1)^(1 / P4)
+  }
+  
+  slope_value <- reactive({
+    req(input$adg_high_sh, input$adg_low_sh, input$adg_high_lab, input$adg_low_lab)
+    (input$adg_high_sh - input$adg_low_sh) / (input$adg_high_lab - input$adg_low_lab)
+  })
+  
+  intercept_value <- reactive({
+    req(input$adg_low_sh, input$adg_low_lab)
+    input$adg_low_sh - (slope_value() * input$adg_low_lab)
+  })
+  
+  
+  output$mcd_plot <- renderPlotly({
+    req(input$P1, input$P2, input$P3, input$P4, input$conc_min, input$conc_max)
+    
+    cal_conc <- calibrator_concentrations()
+    
+    # Генерация концентраций
+    conc_range <- if (input$x_scale == "log") {
+      10^(seq(log10(input$conc_min), log10(input$conc_max), length.out = 1000))
+    } else {
+      seq(from = input$conc_min, to = input$conc_max, length.out = 1000)
+    }
+    
+    # Расчет значений MCD CPS и Lab CPS
+    mcd_cps <- model_mcd_cps(conc_range, input$P1, input$P2, input$P3, input$P4)
+    lab_cps <- (mcd_cps - intercept_value()) / slope_value()
+    
+    # Создание данных для графика
+    plot_data <- data.frame(
+      Concentration = conc_range,
+      MCD_CPS = mcd_cps,
+      Lab_CPS = lab_cps
+    )
+    
+    # Создание графика с использованием plotly
+    p <- plot_ly() %>%
+      # Основные кривые
+      add_trace(data = plot_data, x = ~Concentration, y = ~MCD_CPS, 
+                type = 'scatter', mode = 'lines', name = 'MCD CPS', 
+                line = list(color = '#009999')) %>%
+      add_trace(data = plot_data, x = ~Concentration, y = ~Lab_CPS, 
+                type = 'scatter', mode = 'lines', name = 'Lab CPS', 
+                line = list(color = '#FF8C00')) %>%
+      
+      # Калибраторы MCD
+      add_trace(x = c(cal_conc$mcd$low$conc, cal_conc$mcd$high$conc),
+                y = c(cal_conc$mcd$low$cps, cal_conc$mcd$high$cps),
+                type = 'scatter', mode = 'lines+markers',
+                name = 'MCD Calibrators',
+                line = list(color = '#009999', dash = 'dot'),
+                marker = list(color = '#009999', size = 10)) %>%
+      
+      # Калибраторы Lab
+      add_trace(x = c(cal_conc$lab$low$conc, cal_conc$lab$high$conc),
+                y = c(cal_conc$lab$low$cps, cal_conc$lab$high$cps),
+                type = 'scatter', mode = 'lines+markers',
+                name = 'Lab Calibrators',
+                line = list(color = '#FF8C00', dash = 'dot'),
+                marker = list(color = '#FF8C00', size = 10))
+    
+    # Настройка осей
+    plotly::layout(p,
+                   xaxis = list(
+                     title = "Concentration", 
+                     type = if (input$x_scale == "log") "log" else "linear"
+                   ),
+                   yaxis = list(title = "CPS"),
+                   showlegend = TRUE
+    )
+  })
+  
+  
+  
+  
+  
+  
+  # Calculators Outputs
+  output$calculated_mcd_cps <- renderText({
+    req(input$input_lab_cps)
+    lab_cps <- as.numeric(input$input_lab_cps)
+    mcd_cps <- lab_cps * slope_value() + intercept_value()
+    sprintf("MCD CPS: %.2f", mcd_cps)
+  })
+  
+  output$calculated_concentration_from_lab <- renderText({
+    req(input$input_lab_cps)
+    lab_cps <- as.numeric(input$input_lab_cps)
+    mcd_cps <- lab_cps * slope_value() + intercept_value()
+    concentration <- inverse_model_cps(mcd_cps, input$P1, input$P2, input$P3, input$P4)
+    sprintf("Concentration: %.6f ng/mL", concentration)
+  })
+  
+  output$calculated_mcd_cps_direct <- renderText({
+    req(input$input_concentration)
+    conc <- as.numeric(input$input_concentration)
+    mcd_cps <- model_mcd_cps(conc, input$P1, input$P2, input$P3, input$P4)
+    sprintf("MCD CPS: %.2f", mcd_cps)
+  })
+  
+  output$calculated_lab_cps <- renderText({
+    req(input$input_concentration)
+    conc <- as.numeric(input$input_concentration)
+    mcd_cps <- model_mcd_cps(conc, input$P1, input$P2, input$P3, input$P4)
+    lab_cps <- (mcd_cps - intercept_value()) / slope_value()
+    sprintf("Lab CPS: %.2f", lab_cps)
+  })
+  
+  
+  
+  # Добавляем реактивные выражения для расчета концентраций калибраторов
+  calibrator_concentrations <- reactive({
+    req(input$adg_low_lab, input$adg_high_lab, 
+        input$adg_low_sh, input$adg_high_sh,
+        input$P1, input$P2, input$P3, input$P4)
+    
+    # Расчет концентраций для лабораторных калибраторов
+    lab_low_mcd_cps <- input$adg_low_lab * slope_value() + intercept_value()
+    lab_high_mcd_cps <- input$adg_high_lab * slope_value() + intercept_value()
+    
+    lab_low_conc <- inverse_model_cps(lab_low_mcd_cps, input$P1, input$P2, input$P3, input$P4)
+    lab_high_conc <- inverse_model_cps(lab_high_mcd_cps, input$P1, input$P2, input$P3, input$P4)
+    
+    # Расчет концентраций для MCD калибраторов
+    mcd_low_conc <- inverse_model_cps(input$adg_low_sh, input$P1, input$P2, input$P3, input$P4)
+    mcd_high_conc <- inverse_model_cps(input$adg_high_sh, input$P1, input$P2, input$P3, input$P4)
+    
+    list(
+      lab = list(
+        low = list(conc = lab_low_conc, cps = input$adg_low_lab),
+        high = list(conc = lab_high_conc, cps = input$adg_high_lab)
+      ),
+      mcd = list(
+        low = list(conc = mcd_low_conc, cps = input$adg_low_sh),
+        high = list(conc = mcd_high_conc, cps = input$adg_high_sh)
+      )
+    )
+  })
+
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------|  
+#_______________________________ * END 4PL Modeling * ________________________________________________________________________________________________________|
+#_____________________________________________________________________________________________________________________________________________________________|
+
+  
+  
+  
+#
+#
+#
+#
+#
+#
+  
+  
+  
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------|   
+#_______________________________ ** Work with RESULTS DATA ** ________________________________________________________________________________________________|     
+#_____________________________________________________________________________________________________________________________________________________________|
+  
   
   
 
-#_______________________________ ** Work with RESULTS DATA ** ________________________________________________________________________________________________________|   
-
   
+#------------------------------------ *** Observers for debugging ***-----------------------------------|
+  observe({
+    req (rv_results$all_display_data)
+    print("all_display_data")
+    print(str(rv_results$proceed_data))
+  })
+  
+  observe({
+    req (rv_results$filtered_data)
+    print('filtered_data')
+    print(str(rv_results$filtered_data))
+  })
+
+#_________________________________________________________________________________________|    
+  
+
 #________________ 1.1 File validation function __________________________________|
   
   validate_file <- function(file_path) {
@@ -44,123 +239,159 @@ server <- function(input, output, session) {
   
 columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 41, 54, 55, 59, 60, 61, 78)
   
-  observeEvent(input$results_files, {
-    req(input$results_files)  # Проверяем, что файлы загружены
+observeEvent(input$results_files, {
+  req(input$results_files)  # Проверяем, что файлы загружены
+  
+  withProgress(message = "Processing files", value = 0, {
+    output$load_status <- renderText("Starting file processing...")
     
-    withProgress(message = "Processing files", value = 0, {
-      output$load_status <- renderText("Starting file processing...")
+    tryCatch({
+      # Validate files
+      valid_files <- input$results_files$datapath[sapply(input$results_files$datapath, validate_file)]
       
-      tryCatch({
-        # Validate files
-        valid_files <- input$results_files$datapath[sapply(input$results_files$datapath, validate_file)]
+      if (length(valid_files) == 0) {
+        stop("No valid files to process")
+      }
+      
+      # Process files
+      total_files <- length(valid_files)
+      all_data <- bind_rows(lapply(seq_along(valid_files), function(i) {
+        file <- valid_files[i]
         
-        if (length(valid_files) == 0) {
-          stop("No valid files to process")
+        incProgress(1 / total_files, 
+                    detail = sprintf("Processing file %d of %d", i, total_files))
+        
+        # Check cache
+        cache_key <- digest::digest(file)
+        cache_env <- data_cache()
+        
+        if (exists(cache_key, envir = cache_env)) {
+          return(get(cache_key, envir = cache_env))
         }
         
-        # Process files
-        total_files <- length(valid_files)
-        all_data <- bind_rows(lapply(seq_along(valid_files), function(i) {
-          file <- valid_files[i]
-          
-          incProgress(1/total_files, 
-                      detail = sprintf("Processing file %d of %d", i, total_files))
-          
-          # Check cache
-          cache_key <- digest::digest(file)
-          cache_env <- data_cache()
-          
-          if (exists(cache_key, envir = cache_env)) {
-            return(get(cache_key, envir = cache_env))
-          }
-          
-          # Load data
-          df <- openxlsx::read.xlsx(file, cols = columns_to_load, colNames = TRUE)
-          
-          # Process data
-          processed_df <- tryCatch({
-            df %>% 
-              mutate(
-                id_lab = as.factor(id_lab),
-                sn = as.character(sn),
-                Unique_Record_ID_Num = as.numeric(Unique_Record_ID_Num),
-                Identifier = as.numeric(Identifier),
-                Patient_ID_Num = as.character(Patient_ID_Num),
-                Name = as.character(Name),
-                Physician_Name = as.character(Physician_Name),
-                Dilution_Factor = as.numeric(Dilution_Factor),
-                Reagent_Name = as.character(Reagent_Name),
-                Result = as.numeric(Result),
-                Limit_High = as.numeric(Limit_High),
-                Limit_Low = as.numeric(Limit_Low),
-                CPS = as.numeric(CPS),
-                Date_And_Time_Resulted = ymd_hms(as.character(Date_And_Time_Resulted)),
-                Bead_Lot = as.character(Bead_Lot),
-                Reagent_Lot_Cycle_1 = as.character(Reagent_Lot_Cycle_1),
-                Kit_Lot = as.numeric(Kit_Lot),
-                Formula_Number = as.numeric(Formula_Number),
-                offLineDilution_Factor = as.numeric(offLineDilution_Factor),
-                Assay_Type = as.numeric(Assay_Type),
-                Allergen_Code = as.character(Allergen_Code),
-                Allergen_Lot = as.character(Allergen_Lot),
-                PrincipleDFactor = as.numeric(PrincipleDFactor),
-                across(where(is.character), ~if_else(is.na(.), "", as.character(.))),
-                file_source = basename(file)
-              )
-          }, error = function(e) {
-            warning(sprintf("Error processing file %s: %s", basename(file), e$message))
-            NULL
-          })
-          
-          # Save to cache
-          if (!is.null(processed_df)) {
-            assign(cache_key, processed_df, envir = cache_env)
-          }
-          
-          processed_df
-        }))
+        # Load data
+        df <- openxlsx::read.xlsx(file, cols = columns_to_load, colNames = TRUE)
         
-        if (is.null(all_data) || nrow(all_data) == 0) {
-          stop("Failed to load data from files")
-        }
-        
-        # Save results
-        rv_results$proceed_data <- all_data %>% arrange(Reagent_Name)
-        
-        
-        # Update summary information
-        output$results_summary <- renderText({
-          req(rv_results$proceed_data)
-          num_labs <- length(unique(rv_results$proceed_data$id_lab))
-          num_tests <- nrow(rv_results$proceed_data)
-          date_range <- range(rv_results$proceed_data$Date_And_Time_Resulted, na.rm = TRUE)
-          date_range_text <- paste(
-            format(date_range[1], "%d %b %Y"),
-            "to",
-            format(date_range[2], "%d %b %Y")
-          )
-          paste(
-            "Данные из лабораторий: ", num_labs, "\n",
-            "Количество тестов: ", num_tests, "\n",
-            "Диапазон дат: ", date_range_text
-          )
+        # Process data
+        processed_df <- tryCatch({
+          df %>% 
+            mutate(
+              id_lab = as.character(id_lab),
+              sn = as.character(sn),
+              Unique_Record_ID_Num = as.numeric(Unique_Record_ID_Num),
+              Identifier = as.numeric(Identifier),
+              Patient_ID_Num = as.character(Patient_ID_Num),
+              Name = as.character(Name),
+              Physician_Name = as.character(Physician_Name),
+              Dilution_Factor = as.numeric(Dilution_Factor),
+              Reagent_Name = as.character(Reagent_Name),
+              Result = as.numeric(Result),
+              Limit_High = as.numeric(Limit_High),
+              Limit_Low = as.numeric(Limit_Low),
+              CPS = as.numeric(CPS),
+              Date_And_Time_Resulted = ymd_hms(as.character(Date_And_Time_Resulted)),
+              Bead_Lot = as.character(Bead_Lot),
+              Reagent_Lot_Cycle_1 = as.character(Reagent_Lot_Cycle_1),
+              Kit_Lot = as.numeric(Kit_Lot),
+              Formula_Number = as.numeric(Formula_Number),
+              offLineDilution_Factor = as.numeric(offLineDilution_Factor),
+              Assay_Type = as.numeric(Assay_Type),
+              Allergen_Code = as.character(Allergen_Code),
+              Allergen_Lot = as.character(Allergen_Lot),
+              PrincipleDFactor = as.numeric(PrincipleDFactor),
+              across(where(is.character), ~if_else(is.na(.), "", as.character(.))),
+              file_source = basename(file)
+            )
+        }, error = function(e) {
+          warning(sprintf("Error processing file %s: %s", basename(file), e$message))
+          NULL
         })
         
-        # Update load status
-        invalid_files <- length(input$results_files$datapath) - length(valid_files)
-        output$load_status <- renderText(sprintf(
-          "Loading completed! Processed files: %d, records: %d. Skipped files: %d.",
-          length(valid_files),
-          nrow(all_data),
-          invalid_files
-        ))
+        # Save to cache
+        if (!is.null(processed_df)) {
+          assign(cache_key, processed_df, envir = cache_env)
+        }
         
-      }, error = function(e) {
-        output$load_status <- renderText(paste("Loading error:", e$message))
+        processed_df
+      }))
+      
+      if (is.null(all_data) || nrow(all_data) == 0) {
+        stop("Failed to load data from files")
+      }
+      
+      # Remove duplicates and sort
+      cleaned_data <- all_data %>%
+        distinct(Result, CPS,  sn, Date_And_Time_Resulted, Patient_ID_Num, Reagent_Name, .keep_all = TRUE) %>%
+        arrange(Reagent_Name)
+      
+      # Save results
+      rv_results$proceed_data <- cleaned_data 
+      
+      # Calculate duplicates
+      duplicate_count <- nrow(all_data) - nrow(cleaned_data)
+      
+      # Update summary information
+      output$results_summary <- renderText({
+        req(rv_results$proceed_data)
+        
+        # Подсчёт количества лабораторий
+        num_labs <- length(unique(rv_results$proceed_data$id_lab))
+        
+        # Общее количество тестов
+        num_tests <- nrow(rv_results$proceed_data)
+        
+        # Диапазон дат
+        date_range <- range(rv_results$proceed_data$Date_And_Time_Resulted, na.rm = TRUE)
+        date_range_text <- paste(
+          format(date_range[1], "%d %b %Y"),
+          "to",
+          format(date_range[2], "%d %b %Y")
+        )
+        
+        paste(
+          "Данные из лабораторий: ", num_labs, "\n",
+          "Количество тестов: ", num_tests, "\n",
+          "Диапазон дат: ", date_range_text, "\n",
+          "Удалено дублирующихся записей: ", duplicate_count
+        )
       })
+      
+      # Update load status
+      invalid_files <- length(input$results_files$datapath) - length(valid_files)
+      output$load_status <- renderText(sprintf(
+        "Loading completed! Processed files: %d, records: %d. Skipped files: %d.",
+        length(valid_files),
+        nrow(cleaned_data),
+        invalid_files
+      ))
+      
+    }, error = function(e) {
+      showNotification(paste("Loading error:", e$message), type = "error")
     })
   })
-  
+})
+
+
+#______________________________________________________________________________________|
+
+                    
+                   
+
+#--------------------------------------- * FILTERS * -------------------------------------------------|
+
+observe({
+  # Если загружены данные, обновляем диапазон выбора
+  if (!is.null(rv_results$proceed_data)) {
+    updateDateRangeInput(
+      session, 
+      "date_filter",
+      start = min(rv_results$proceed_data$Date_And_Time_Resulted, na.rm = TRUE),
+      end = max(rv_results$proceed_data$Date_And_Time_Resulted, na.rm = TRUE)
+    )
+  }
+})
+
+
 #______________________________________________________________________________________|
   
                    
@@ -168,7 +399,24 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
                    
   
 #______________________________________________________________________________________| 
+ 
+
+observe({
+  req(rv_results$proceed_data)
   
+  updateSelectInput(session, "test_select",
+                    choices = unique(rv_results$proceed_data$Reagent_Name),
+                    selected = NULL)
+  
+  updateSelectInput(session, "lab_select",
+                    choices = c("All", unique(rv_results$proceed_data$id_lab)),
+                    selected = "All")
+  
+  updateSelectInput(session, "kit_lot_select",
+                    choices = c("All", unique(rv_results$proceed_data$Kit_Lot)),
+                    selected = "All")
+})
+
   
   # Обновление списка тестов при загрузке данных
   observe({
@@ -268,9 +516,10 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
                    
                    
   
-#__________________Create rv_results$all_display_data and filtered_data()__________|
+#__________________Create rv_results$all_display_data and rv_results$filtered_data__________|
   
 
+  # Наблюдение для создания агрегированных данных
   observe({
     req(rv_results$proceed_data)
     rv_results$all_display_data <- rv_results$proceed_data %>%
@@ -284,28 +533,33 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
         .groups = 'drop'
       )
   })
+  
+  observe({
+  req(rv_results$all_display_data)
+  
+  # Создание фильтрованных данных и сохранение в rv_results
+  rv_results$filtered_data <- rv_results$all_display_data %>%
+    # Фильтр по дате
+    filter(
+      date >= input$date_filter[1],
+      date <= input$date_filter[2]
+    ) %>%
+    # Фильтры по тесту, лаборатории и номеру партии
+    filter(
+      if (!is.null(input$test_select) && input$test_select != "") 
+        Reagent_Name == input$test_select 
+      else TRUE,
+      if (!is.null(input$lab_select) && !("All" %in% input$lab_select)) 
+        id_lab %in% input$lab_select 
+      else TRUE,
+      if (!is.null(input$kit_lot_select) && !("All" %in% input$kit_lot_select)) 
+        Kit_Lot %in% input$kit_lot_select 
+      else TRUE
+    ) %>%
+    arrange(date) %>%
+    mutate(across(c(mean_result, sd_result, mean_cps, mean_df), ~ round(., 2)))  # Округление значений
+})
 
-
-    filtered_data <- reactive({
-      req(rv_results$proceed_data)
-      data <- rv_results$all_display_data
-      
-      # Используйте dplyr::filter с условными выражениями
-      data %>%
-        dplyr::filter(
-          if (!is.null(input$test_select) && input$test_select != "") 
-            Reagent_Name == input$test_select 
-          else TRUE,
-          if (!is.null(input$lab_select) && !("All" %in% input$lab_select)) 
-            id_lab %in% input$lab_select 
-          else TRUE,
-          if (!is.null(input$kit_lot_select) && !("All" %in% input$kit_lot_select)) 
-            Kit_Lot %in% input$kit_lot_select 
-          else TRUE
-        ) %>%
-        arrange(date) %>%
-        mutate(across(c(mean_result, sd_result, mean_cps, mean_df), ~round(., 2)))
-    })
 
 #__________________________________________________________________________________|    
  
@@ -313,13 +567,13 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
                  
                  
   
-#_____________________ output$data_table (таблица со сводной статистикой из filtered_data())_________________|
+#_____________________ output$data_table (таблица со сводной статистикой из rv_results$rv_results$filtered_data)_________________|
     
     output$data_table <- DT::renderDT({
-      req(filtered_data())
+      req(rv_results$filtered_data)
       
       # Преобразуем в data.frame перед передачей в datatable
-      data_to_display <- as.data.frame(filtered_data()) %>%
+      data_to_display <- as.data.frame(rv_results$filtered_data) %>%
         select(
           Date = date,
           Laboratory = id_lab,
@@ -360,51 +614,80 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
   
 #______________________ Daily tests plot __________________________________________|
   
-  output$daily_tests_plot <- renderPlotly({
-    data <- if (!is.null(input$test_select) && input$test_select != "") {
-      filtered_data()
-    } else {
-      rv_results$all_display_data
-    }
+    output$daily_tests_plot <- renderPlotly({
+      data <- if (!is.null(input$test_select) && input$test_select != "") {
+        rv_results$filtered_data
+      } else {
+        rv_results$all_display_data
+      }
+      
+      req(data)  # Убедитесь, что данные существуют
+      
+      # Преобразование данных в датафрейм, если это необходимо
+      data <- as.data.frame(data)
+      
+      if (nrow(data) == 0) return(NULL)  # Проверка на пустые данные
+      
+      p <- ggplot(data, 
+                  aes(x = date, y = count, color = as.factor(Kit_Lot), 
+                      linetype = id_lab, group = interaction(id_lab, Kit_Lot))) +
+        geom_line(size = 1.1, alpha = 0.8) +
+        geom_point(size = 3, alpha = 0.9) +
+        geom_smooth(aes(group = 1), method = "loess", se = FALSE, 
+                    color = "black", linetype = "dashed", size = 1) +
+        labs(
+          title = if (!is.null(input$test_select) && input$test_select != "") {
+            paste('Daily Test Count -', input$test_select)
+          } else {
+            'Daily Test Count - All Tests'
+          },
+          subtitle = paste("Total Tests:", sum(data$count, na.rm = TRUE)),
+          x = 'Date',
+          y = 'Test Count',
+          color = 'Reagent Name',
+          linetype = 'Laboratory'
+        ) +
+        theme_minimal() +
+        scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b %Y") +
+        scale_y_continuous(limits = c(0, NA), expand = c(0, 0)) +
+        scale_color_brewer(palette = "Set2") +
+        theme(
+          panel.background = element_rect(fill = "#2C2C2C", color = NA),
+          plot.background = element_rect(fill = "#2C2C2C", color = NA),
+          panel.grid.major = element_line(color = "#1A1A1A"),
+          panel.grid.minor = element_line(color = "#1A1A1A", size = 0.5),
+          axis.text = element_text(color = "#F5F5F5"),
+          axis.title = element_text(color = "#F5F5F5"),
+          plot.title = element_text(color = "#F5F5F5", size = 14, face = "bold"),
+          plot.subtitle = element_text(color = "#F5F5F5", size = 12, face = "italic"),
+          legend.background = element_rect(fill = "#2C2C2C", color = NA),
+          legend.text = element_text(color = "#F5F5F5"),
+          legend.title = element_text(color = "#F5F5F5"),
+          axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5)
+        )
+      
+      # Преобразуем ggplot объект в интерактивный график
+      ggplotly(p) %>%
+        layout(
+          hovermode = "x unified",
+          margin = list(t = 70),
+          annotations = list(
+            list(
+              x = 0.5,
+              y = -0.15,
+              text = "Data Source: Your Laboratory Dataset",
+              showarrow = FALSE,
+              xref = "paper",
+              yref = "paper",
+              xanchor = "center",
+              yanchor = "top",
+              font = list(size = 10, color = "#AAAAAA")
+            )
+          )
+        )
+    })
     
-    print("Rendering plot...")
     
-    if (nrow(data) == 0) return(NULL)
-    
-    p <- ggplot(data, 
-                aes(x = date, y = count, color = as.factor(Reagent_Name), 
-                    linetype = id_lab, group = interaction(id_lab, Kit_Lot))) +
-      geom_line() +
-      geom_point() +
-      labs(
-        title = if (!is.null(input$test_select) && input$test_select != "") {
-          paste('Daily Test Count -', input$test_select)
-        } else {
-          'Daily Test Count - All Tests'
-        },
-        x = 'Date',
-        y = 'Test Count',
-        color = 'Kit Lot'
-      ) +
-      theme_minimal() +
-      scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b %Y") +
-      scale_y_continuous(limits = c(0, NA)) +
-      theme(
-        panel.background = element_rect(fill = "#2C2C2C", color = NA),
-        plot.background = element_rect(fill = "#2C2C2C", color = NA),
-        panel.grid.major = element_line(color = "#1A1A1A"),
-        panel.grid.minor = element_line(color = "#1A1A1A", size = 0.5),
-        axis.text = element_text(color = "#F5F5F5"),
-        axis.title = element_text(color = "#F5F5F5"),
-        plot.title = element_text(color = "#F5F5F5", size = 14, face = "bold"),
-        legend.background = element_rect(fill = "#2C2C2C", color = NA),
-        legend.text = element_text(color = "#F5F5F5"),
-        legend.title = element_text(color = "#F5F5F5"),
-        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5)
-      )
-    
-    ggplotly(p)
-  })
 #__________________________________________________________________________________|   
   
                    
@@ -414,10 +697,10 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
 #_____________________________ STATISTICS TABLE ___________________________________|
   
   output$test_stats_table <- DT::renderDataTable({
-    req(filtered_data())  # Убедитесь, что данные загружены и фильтрованы
+    req(rv_results$filtered_data)  # Убедитесь, что данные загружены и фильтрованы
     
-    stats_data <- filtered_data() %>%
-      group_by(Reagent_Name, Kit_Lot) %>%
+    stats_data <- rv_results$filtered_data %>%
+      group_by(Reagent_Name, Kit_Lot, id_la) %>%
       summarise(
         Mean_Result = round(mean(mean_result, na.rm = TRUE), 2),
         SD_Result = round(sd(mean_result, na.rm = TRUE), 2),
@@ -447,10 +730,11 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
 #_____________________ STATISTICS PLOT ____________________________________________|
   
   output$test_stats_plot <- renderPlotly({
-    req(filtered_data())
+    req(rv_results$filtered_data)
     
-    data_for_plot <- filtered_data() %>%
-      group_by(Reagent_Name, Kit_Lot) %>%
+    # Агрегация данных для графика
+    data_for_plot <- rv_results$filtered_data %>%
+      group_by(Reagent_Name, Kit_Lot, id_lab) %>%  # Включение лабораторий в группировку
       summarise(
         Mean_Result = mean(mean_result, na.rm = TRUE),
         SD_Result = sd(mean_result, na.rm = TRUE),
@@ -460,20 +744,40 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
     
     if (nrow(data_for_plot) == 0) return(NULL)  # Если данных нет
     
-    p <- ggplot(data_for_plot, aes(x = Reagent_Name, y = Total_Tests, fill = Kit_Lot)) +
-      geom_bar(stat = "identity", position = "dodge") +
+    # Создание графика
+    p <- ggplot(data_for_plot, aes(x = Reagent_Name, y = Total_Tests, fill = as.factor(Kit_Lot), color = id_lab)) +
+      geom_bar(stat = "identity", position = "dodge", alpha = 0.8, show.legend = TRUE) +  # Группированные столбцы с цветом лабораторий
+      geom_text(aes(label = Total_Tests), vjust = -0.5, size = 3) +  # Подписи над столбцами
       labs(
-        title = "Test Statistics by Reagent and Kit Lot",
+        title = "Test Statistics by Reagent, Kit Lot, and Laboratory",
+        subtitle = "Total Tests per Reagent and Kit Lot, grouped by Laboratory",
         x = "Reagent Name",
-        y = "Total Tests"
+        y = "Total Tests",
+        fill = "Kit Lot",
+        color = "Laboratory"
       ) +
       theme_minimal() +
       theme(
-        axis.text.x = element_text(angle = 45, hjust = 1)
-      )
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 14, face = "bold"),
+        plot.subtitle = element_text(size = 12, face = "italic"),
+        legend.position = "bottom"
+      ) +
+      scale_fill_brewer(palette = "Set2") +  # Улучшенная цветовая палитра для Kit Lot
+      scale_color_manual(values = c("red", "blue", "green", "purple", "orange"))  # Уникальные цвета для лабораторий
     
-    ggplotly(p)
+    # Преобразование в интерактивный график с подробными подсказками
+    ggplotly(p, tooltip = c("x", "y", "fill", "color")) %>%
+      layout(
+        hovermode = "x unified",  # Подсказки по оси X
+        margin = list(t = 50)  # Отступ сверху
+      )
   })
+  
+  
+  
+  
+
 #-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 #_______________________________ * END Work with RESULTS DATA * ________________________________________________________________________________________________________| 
 #_________________________________________________________________________________________________________________________________________________________________________|
@@ -483,7 +787,7 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
 
   
 # *******************************  
-# *  Adjustment: Data Page 1.2 **
+# *  Adjustment: Data 4        **
 # *******************************
   
   
@@ -900,6 +1204,21 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
 #_______________________________ **END LOADING Adjustment Data** _____________________________________________|  
 
 
+  
+  
+  
+#
+#
+#
+#
+#
+#
+#
+  
+  
+  
+  
+
 
 #----------------------------------------------------------------------------------------------------------------------------------------------|
 #_______________________________ ** Start working with Kits Data** ____________________________________________________________________________|
@@ -1148,176 +1467,91 @@ columns_to_load <- c(1, 2, 3, 4, 6, 7, 10, 11, 20, 21, 25, 26, 29, 33, 34, 35, 4
   })
   
  
-  
+#---------------------------------------------------------------------------------------------------------------------------------|
+#__________________________________________**** END WORK WITH KITS **** __________________________________________________________|
 #_________________________________________________________________________________________________________________________________|
+
+
+  
+  
+  
+#
+#
+#
+#
+#
+#
+#
+#
+  
+  
+  
+
+#---------------------------------------------------------------------------------------------------------------------------------|
+#-------------------------- ***** START  Работа по отпрвке данных в MySQL  ***** -------------------------------------------------|
 #_________________________________________________________________________________________________________________________________|
 
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-#---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-#_______________________________ ** START 4PL Modeling ** ______________________________________________________________________________________________________|  
-#_______________________________________________________________________________________________________________________________________________________________|
+#_____________________________ для связи с SQL  ____________________|
+
+library(DBI) #Используйте пакет DBI или RMySQL для соединения:
+library(RMySQL)
 
 
-# 4PL Model
-model_mcd_cps <- function(conc, P1, P2, P3, P4) {
-  P2 + (P1 - P2) / (1 + (conc / P3)^P4)
+mysql_conn <- function() { 
+  dbConnect(
+    RMySQL::MySQL(),
+    dbname = "shiny_app_db",
+    host = "127.0.0.1",
+    port = 3306,
+    user = "root",
+    password = "Winter1986+!",
+    client.flag = CLIENT_LOCAL_FILES
+  )
 }
 
-inverse_model_cps <- function(cps, P1, P2, P3, P4) {
-  P3 * ((P1 - P2) / (cps - P2) - 1)^(1 / P4)
-}
-
-slope_value <- reactive({
-  req(input$adg_high_sh, input$adg_low_sh, input$adg_high_lab, input$adg_low_lab)
-  (input$adg_high_sh - input$adg_low_sh) / (input$adg_high_lab - input$adg_low_lab)
-})
-
-intercept_value <- reactive({
-  req(input$adg_low_sh, input$adg_low_lab)
-  input$adg_low_sh - (slope_value() * input$adg_low_lab)
-})
 
 
-output$mcd_plot <- renderPlotly({
-  req(input$P1, input$P2, input$P3, input$P4, input$conc_min, input$conc_max)
+
+observeEvent(input$upload_to_sql, {
+  req(rv_results$proceed_data)  # Убедитесь, что данные загружены
   
-  cal_conc <- calibrator_concentrations()
+  conn <- mysql_conn()  # Подключение к базе данных
   
-  # Генерация концентраций
-  conc_range <- if (input$x_scale == "log") {
-    10^(seq(log10(input$conc_min), log10(input$conc_max), length.out = 1000))
-  } else {
-    seq(from = input$conc_min, to = input$conc_max, length.out = 1000)
-  }
-  
-  # Расчет значений MCD CPS и Lab CPS
-  mcd_cps <- model_mcd_cps(conc_range, input$P1, input$P2, input$P3, input$P4)
-  lab_cps <- (mcd_cps - intercept_value()) / slope_value()
-  
-  # Создание данных для графика
-  plot_data <- data.frame(
-    Concentration = conc_range,
-    MCD_CPS = mcd_cps,
-    Lab_CPS = lab_cps
-  )
-  
-  # Создание графика с использованием plotly
-  p <- plot_ly() %>%
-    # Основные кривые
-    add_trace(data = plot_data, x = ~Concentration, y = ~MCD_CPS, 
-              type = 'scatter', mode = 'lines', name = 'MCD CPS', 
-              line = list(color = '#009999')) %>%
-    add_trace(data = plot_data, x = ~Concentration, y = ~Lab_CPS, 
-              type = 'scatter', mode = 'lines', name = 'Lab CPS', 
-              line = list(color = '#FF8C00')) %>%
-    
-    # Калибраторы MCD
-    add_trace(x = c(cal_conc$mcd$low$conc, cal_conc$mcd$high$conc),
-              y = c(cal_conc$mcd$low$cps, cal_conc$mcd$high$cps),
-              type = 'scatter', mode = 'lines+markers',
-              name = 'MCD Calibrators',
-              line = list(color = '#009999', dash = 'dot'),
-              marker = list(color = '#009999', size = 10)) %>%
-    
-    # Калибраторы Lab
-    add_trace(x = c(cal_conc$lab$low$conc, cal_conc$lab$high$conc),
-              y = c(cal_conc$lab$low$cps, cal_conc$lab$high$cps),
-              type = 'scatter', mode = 'lines+markers',
-              name = 'Lab Calibrators',
-              line = list(color = '#FF8C00', dash = 'dot'),
-              marker = list(color = '#FF8C00', size = 10))
-  
-  # Настройка осей
-  plotly::layout(p,
-                 xaxis = list(
-                   title = "Concentration", 
-                   type = if (input$x_scale == "log") "log" else "linear"
-                 ),
-                 yaxis = list(title = "CPS"),
-                 showlegend = TRUE
-  )
-})
-
-
-
-
-
-
-# Calculators Outputs
-output$calculated_mcd_cps <- renderText({
-  req(input$input_lab_cps)
-  lab_cps <- as.numeric(input$input_lab_cps)
-  mcd_cps <- lab_cps * slope_value() + intercept_value()
-  sprintf("MCD CPS: %.2f", mcd_cps)
-})
-
-output$calculated_concentration_from_lab <- renderText({
-  req(input$input_lab_cps)
-  lab_cps <- as.numeric(input$input_lab_cps)
-  mcd_cps <- lab_cps * slope_value() + intercept_value()
-  concentration <- inverse_model_cps(mcd_cps, input$P1, input$P2, input$P3, input$P4)
-  sprintf("Concentration: %.6f ng/mL", concentration)
-})
-
-output$calculated_mcd_cps_direct <- renderText({
-  req(input$input_concentration)
-  conc <- as.numeric(input$input_concentration)
-  mcd_cps <- model_mcd_cps(conc, input$P1, input$P2, input$P3, input$P4)
-  sprintf("MCD CPS: %.2f", mcd_cps)
-})
-
-output$calculated_lab_cps <- renderText({
-  req(input$input_concentration)
-  conc <- as.numeric(input$input_concentration)
-  mcd_cps <- model_mcd_cps(conc, input$P1, input$P2, input$P3, input$P4)
-  lab_cps <- (mcd_cps - intercept_value()) / slope_value()
-  sprintf("Lab CPS: %.2f", lab_cps)
-})
-
-
-
-# Добавляем реактивные выражения для расчета концентраций калибраторов
-calibrator_concentrations <- reactive({
-  req(input$adg_low_lab, input$adg_high_lab, 
-      input$adg_low_sh, input$adg_high_sh,
-      input$P1, input$P2, input$P3, input$P4)
-  
-  # Расчет концентраций для лабораторных калибраторов
-  lab_low_mcd_cps <- input$adg_low_lab * slope_value() + intercept_value()
-  lab_high_mcd_cps <- input$adg_high_lab * slope_value() + intercept_value()
-  
-  lab_low_conc <- inverse_model_cps(lab_low_mcd_cps, input$P1, input$P2, input$P3, input$P4)
-  lab_high_conc <- inverse_model_cps(lab_high_mcd_cps, input$P1, input$P2, input$P3, input$P4)
-  
-  # Расчет концентраций для MCD калибраторов
-  mcd_low_conc <- inverse_model_cps(input$adg_low_sh, input$P1, input$P2, input$P3, input$P4)
-  mcd_high_conc <- inverse_model_cps(input$adg_high_sh, input$P1, input$P2, input$P3, input$P4)
-  
-  list(
-    lab = list(
-      low = list(conc = lab_low_conc, cps = input$adg_low_lab),
-      high = list(conc = lab_high_conc, cps = input$adg_high_lab)
-    ),
-    mcd = list(
-      low = list(conc = mcd_low_conc, cps = input$adg_low_sh),
-      high = list(conc = mcd_high_conc, cps = input$adg_high_sh)
+  tryCatch({
+    # Преобразование данных в формат SQL
+    sql_query <- paste(
+      "INSERT IGNORE INTO results_data_sql (id_lab, sn, Unique_Record_ID_Num, Identifier, Patient_ID_Num, Name, Physician_Name, Dilution_Factor, Reagent_Name, Result, Limit_High, Limit_Low, CPS, Date_And_Time_Resulted, Bead_Lot, Reagent_Lot_Cycle_1, Kit_Lot, Formula_Number, offLineDilution_Factor, Assay_Type, Allergen_Code, Allergen_Lot, PrincipleDFactor, file_source) VALUES",
+      paste(
+        apply(rv_results$proceed_data, 1, function(row) {
+          paste0(
+            "(",
+            paste(shQuote(row, type = "sh"), collapse = ", "),
+            ")"
+          )
+        }),
+        collapse = ", "
+      )
     )
-  )
+    
+    # Выполнение запроса
+    dbExecute(conn, sql_query)
+    
+    showNotification("Data uploaded successfully, duplicates ignored!", type = "message")
+  }, error = function(e) {
+    showNotification(paste("Error uploading to SQL:", e$message), type = "error")
+  }, finally = {
+    dbDisconnect(conn)  # Закрытие соединения
+  })
 })
-#_______________________________ ** END 4PL Modeling ** ______________________________________________________________________________________________________|
 
+
+
+
+
+
+
+#_________________________________________________________________________________________________________________|
 
 
 

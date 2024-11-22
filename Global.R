@@ -74,8 +74,8 @@ my_theme <- bs_theme(
   # Добавляем настройки размера шрифта
   base_font_size = "0.875rem",        # Базовый размер шрифта
   "input-font-size" = "0.8rem",       # Размер шрифта для input элементов
-  "btn-font-size" = "0.8rem",         # Размер шрифта для кнопок
-  "card-title-font-size" = "1rem",    # Размер шрифта заголовков карточек
+  "btn-font-size" = "1rem",         # Размер шрифта для кнопок
+  "card-title-font-size" = "1.6rem",    # Размер шрифта заголовков карточек
   "navbar-font-size" = "1rem",        # Размер шрифта в навигационной панели
   "table-font-size" = "0.8rem"        # Размер шрифта в таблицах
 )
