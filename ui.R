@@ -9,6 +9,7 @@ library(shinyjs)
 options(shiny.maxRequestSize = 100 * 1024^2)
 
 ui <- page_navbar(
+ 
   theme = my_theme,
   
   header = tagList(
@@ -116,6 +117,15 @@ ui <- page_navbar(
             class = "bg-primary text-white"
           ),
           card_body(
+            selectInput("type_reaction", "Select Test:", choices = NULL),
+            selectInput("lot_reaction", "Select Lot:", choices = NULL),
+            textOutput("reaction_type_display"),
+            div(
+              textOutput("assay_min_display"),
+              textOutput("assay_max_display"),
+              style = "margin-top: 10px; font-size: 14px; color: #555;"
+            ),
+            hr(),
             numericInput("P1", "P1 (Max CPS):", value = 3.404367e+19, width = "100%"),
             numericInput("P2", "P2 (Min CPS):", value = 61440, width = "100%"),
             numericInput("P3", "P3 (EC50):", value = 1.280082e+14, width = "100%"),
@@ -162,6 +172,14 @@ ui <- page_navbar(
               textOutput("calculated_lab_cps")
             )
           )
+        )
+      ),
+      card(
+        full_screen = TRUE,
+        style = "min-height: 800px;",
+        card_header("Types of Reactions", class = "bg-primary text-white"),
+        card_body(
+          DTOutput("type_of_reaction_table")
         )
       )
     )
@@ -364,7 +382,8 @@ ui <- page_navbar(
               div(
                 class = "d-flex gap-2 my-3",
                 actionButton("reset_upload", "Reset", class = "btn-warning btn-sm"),
-                downloadButton("export_results", "Export", class = "btn-sm")
+                downloadButton("export_results", "Export", class = "btn-sm"),
+                actionButton("upload_adjustments_to_sql", "Upload to SQL", class = "btn-success btn-sm")
               ),
               textOutput("calib_load_status") %>%
                 tagAppendAttributes(class = "text-info small mt-2"),
@@ -382,20 +401,22 @@ ui <- page_navbar(
                   style = "max-width: 300px;",
                   div(
                     class = "mb-3",
+                    # Выпадающий список для выбора Test Name
                     selectInput(
-                      "calib_test_select", 
-                      "Select Test Name:", 
-                      choices = NULL, 
+                      inputId = "calib_test_select", 
+                      label = "Select Test Name:", 
+                      choices = NULL,  # Заполняется динамически
                       multiple = FALSE,
                       width = "100%"
                     )
                   ),
                   div(
                     class = "mb-3",
+                    # Выпадающий список для выбора Kit Lot
                     selectInput(
-                      "calib_kit_lot_select", 
-                      "Select Kit Lot:", 
-                      choices = NULL, 
+                      inputId = "calib_kit_lot_select", 
+                      label = "Select Kit Lot:", 
+                      choices = NULL,  # Заполняется динамически
                       multiple = TRUE,
                       width = "100%"
                     )
@@ -468,90 +489,111 @@ ui <- page_navbar(
 #____________________________________________________________________________________________________________________|
 
 nav_panel(
-    title = "KITS DATA",
-    page_sidebar(
-      sidebar = sidebar(
-        width = 500,
-        card(
-          card_header(
-            "Data Import", 
-            class = "bg-primary text-white fw-bold"
+  title = "KITS DATA",
+  page_sidebar(
+    sidebar = sidebar(
+      width = 500,
+      card(
+        card_header(
+          "Data Import & Filters", 
+          class = "bg-primary text-white fw-bold"
+        ),
+        style = "background-color: #808080;",
+        
+        # Kits Data Accordion
+        accordion(
+          # Kits Data Panel
+          accordion_panel(
+            "Kits Data",
+            fileInput(
+              "kits_files",
+              span(
+                "Upload Kits Files",
+                span(class = "text-muted d-block small", "Max size: 20MB")
+              ),
+              multiple = TRUE,
+              accept = c(".xlsx"),
+              buttonLabel = "Browse...",
+              width = "100%"
+            ),
+            div(
+              class = "d-flex gap-2 my-3",
+              actionButton("reset_kits_upload", "Reset", class = "btn-warning btn-sm"),
+              downloadButton("export_kits_data", "Export", class = "btn-sm"),
+              actionButton("upload_kits_to_sql", "Upload to SQL", class = "btn-success btn-sm")
+            ),
+            textOutput("kits_load_status") %>%
+              tagAppendAttributes(class = "text-info small mt-2"),
+            verbatimTextOutput("kits_summary") %>%
+              tagAppendAttributes(class = "small mt-3")
           ),
-          style = "background-color: #808080;",
           
 
-#----------------------------------------------* upload Kits - sidebar
-
-          accordion(
-            # Kits Data Panel
-            accordion_panel(
-              "Kits Data",
-              fileInput(
-                "kits_files",
-                span(
-                  "Upload Kits Files",
-                  span(class = "text-muted d-block small", "Max size: 20MB")
-                ),
-                multiple = TRUE,
-                accept = c(".xlsx"),
-                buttonLabel = "Browse...",
-                width = "100%"
-              ),
-              div(
-                class = "d-flex gap-2 my-3",
-                actionButton("reset_kits_upload", "Reset", class = "btn-warning btn-sm"),
-                downloadButton("export_kits_data", "Export", class = "btn-sm")
-              ),
-              textOutput("kits_load_status") %>%
-                tagAppendAttributes(class = "text-info small mt-2"),
-              verbatimTextOutput("kits_summary") %>%
-                tagAppendAttributes(class = "small mt-3")
-            ),
-
-#------------------------------------------------* Kits Data Filters Panel - sidebar
-
-            # Kits Filters Panel
-            accordion_panel(
-              "Kits Data Filters",
-              div(
-                style = "max-width: 300px;",
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "kits_test_select", 
-                    "Select Test:", 
-                    choices = NULL, 
-                    multiple = FALSE,
-                    width = "100%"
-                  )
-                ),
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "kits_lot_select", 
-                    "Select Lot:", 
-                    choices = NULL, 
-                    multiple = TRUE,
-                    width = "100%"
-                  )
-                ),
-                div(
-                  class = "mb-3",
-                  selectInput(
-                    "kits_manufacturer_select", 
-                    "Select Manufacturer:", 
-                    choices = NULL, 
-                    multiple = TRUE,
-                    width = "100%"
-                  )
-                )
-              )
-            )
-          )
+# Data Filters Panel
+accordion_panel(
+  "Data Filters",
+  div(
+    class = "my-4",
+    h5("Filters", class = "text-muted"),
+    div(
+      style = "max-width: 300px;",
+      div(
+        class = "mb-3",
+        selectInput(
+          "kits_test_select",
+          "Select Test:", 
+          choices = NULL,
+          multiple = FALSE,
+          width = "100%"
         )
       ),
+      div(
+        class = "mb-3",
+        selectInput(
+          "lab_select",
+          "Select Laboratory:", 
+          choices = NULL,
+          multiple = TRUE,
+          width = "100%"
+        )
+      ),
+      div(
+        class = "mb-3",
+        selectInput(
+          "kits_lot_select",
+          "Select Kit Lot:", 
+          choices = NULL,
+          multiple = TRUE,
+          width = "100%"
+        )
+      ),
+      div(
+        class = "mb-3",
+        dateRangeInput(
+          "kits_date_filter",
+          "Select Date Range:",
+          start = NULL,
+          end = NULL,
+          format = "yyyy-mm-dd",
+          separator = " to "
+        )
+      ),
+      div(
+        class = "mb-3",
+        actionButton(
+          "reset_filters",
+          "Reset Filters",
+          class = "btn btn-secondary w-100"
+        )
+      )
+    )
+  )
+)
+        )
+      )
+    ),
 
-#---------------------------------------------------* Calibration Data -> Main Content
+#---------------------------------------------------* Kits Data -> Main Content
 
       # Main content area
       layout_column_wrap(
@@ -576,25 +618,66 @@ nav_panel(
               card(
                 full_screen = TRUE,
                 card_body(
+                  height = "100%",
                   layout_column_wrap(
                     width = 1,
-                    plotlyOutput("kits_usage_plot", height = "600px", width = "100%") %>%
+                    heights_equal = "row",
+                    style = css(grid_template_rows = "600px 600px"),  # Фиксированная высота для каждого элемента
+                    plotlyOutput("kits_usage_plot", height = "550px", width = "100%") %>%
                       withSpinner(type = 4, color = "#0d6efd"),
-                    DTOutput("kits_usage_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                    DTOutput("kits_usage_table", height = "550px") %>% 
+                      withSpinner(type = 4, color = "#0d6efd")
                   )
                 )
               )
             ),
+            
             nav_panel(
               "Performance Metrics",
               card(
                 full_screen = TRUE,
                 card_body(
+                  height = "100%",
                   layout_column_wrap(
                     width = 1,
-                    plotlyOutput("kits_performance_plot", height = "600px", width = "100%") %>%
+                    heights_equal = "row",
+                    style = css(grid_template_rows = "600px 600px"),
+                    plotlyOutput("kits_performance_plot", height = "550px", width = "100%") %>%
                       withSpinner(type = 4, color = "#0d6efd"),
-                    DTOutput("kits_performance_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                    DTOutput("kits_performance_table", height = "550px") %>% 
+                      withSpinner(type = 4, color = "#0d6efd")
+                  )
+                )
+              )
+            ),
+            
+            nav_panel(
+              "Kits Validation Details",
+              card(
+                full_screen = TRUE,
+                card_body(
+                  layout_column_wrap(
+                    width = 1,
+                    # Заменяем plotlyOutput на verbatimTextOutput
+                    verbatimTextOutput("kits_validation_details") %>%
+                      withSpinner(type = 4, color = "#0d6efd"),
+                    DTOutput("kits_validation_table") %>% withSpinner(type = 4, color = "#0d6efd")
+                  )
+                )
+              )
+            ),
+            nav_panel(
+              "Calibration Parameters Analysis",
+              card(
+                full_screen = TRUE,
+                card_body(
+                  height = "100%",
+                  layout_column_wrap(
+                    width = 1,
+                    heights_equal = "row",
+                    style = css(grid_template_rows = "600px 600px"),
+                    plotlyOutput("calibration_trend_plot", height = "550px", width = "100%") %>%
+                      withSpinner(type = 4, color = "#0d6efd")
                   )
                 )
               )
@@ -603,5 +686,250 @@ nav_panel(
         )
       )
     )
+  ),
+    
+
+
+
+
+
+
+
+
+
+#---------------------------------------------------* Analyzing Data -> SIDEBAR----------------------|
+
+
+
+
+# Sidebar с загрузкой данных и фильтрами
+nav_panel(
+  title = "Analyzing Data from SQL",
+  page_sidebar(
+    sidebar = sidebar(
+      width = 400,
+      card(
+        card_header(
+          "Data Access & Filters", 
+          class = "bg-primary text-white fw-bold"
+        ),
+        style = "background-color: #2C2C2C; color: white;",
+        accordion(
+          # Панель загрузки данных
+          accordion_panel(
+            title = "Upload SQL Data",
+            value = "upload_data",
+            div(
+              class = "d-flex flex-column gap-3 p-3",
+              div(
+                actionButton(
+                  "load_sql_data", 
+                  "Load SQL Data", 
+                  class = "btn btn-primary w-100"
+                )
+              ),
+              div(
+                textOutput("sql_data_status"),  # Статус загрузки данных
+                class = "text-muted"
+              )
+            )
+          ),
+          hr(),
+          # Панель фильтров
+          accordion_panel(
+            title = "Data Filters",
+            div(
+              class = "my-3 p-3",
+              div(
+                style = "max-width: 300px;",
+                # Выбор теста
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    inputId = "sql_test_select",
+                    label = "Select Test:",
+                    choices = NULL,
+                    selected = "",
+                    multiple = FALSE,
+                    width = "100%"
+                  )
+                ),
+                # Выбор лаборатории
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    inputId = "sql_lab_select",
+                    label = "Select Laboratory:",
+                    choices = NULL,
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                ),
+                # Выбор лота
+                div(
+                  class = "mb-3",
+                  selectInput(
+                    inputId = "sql_lot_select",
+                    label = "Select Kit Lot:",
+                    choices = NULL,
+                    multiple = TRUE,
+                    width = "100%"
+                  )
+                ),
+                # Диапазон дат
+                div(
+                  class = "mb-3",
+                  dateRangeInput(
+                    inputId = "sql_date_filter",
+                    label = "Select Date Range:",
+                    start = "2005-01-01",  # Устанавливаем начальную дату
+                    end = Sys.Date(),    # Устанавливаем конечную дату
+                    min = NULL,
+                    max = NULL,
+                    format = "yyyy-mm-dd",
+                    separator = " to "
+                  )
+                  
+                ),
+                # Сброс фильтров
+                div(
+                  class = "mb-3",
+                  actionButton(
+                    inputId = "sql_reset_filters",
+                    label = "Reset Filters",
+                    class = "btn btn-secondary w-100"
+                  )
+                )
+              )
+            )
+          ),
+          
+          hr(),
+          
+          verbatimTextOutput("results_summary"),  # Суммарная информация для Results
+          verbatimTextOutput("kits_summary"),     # Суммарная информация для Kits
+          verbatimTextOutput("adjustments_summary")  # Суммарная информация для Adjustments
+        )
+      )
+    ),
+    # Main content area
+    layout_column_wrap(
+      width = 1,
+      card(
+        full_screen = TRUE,
+        card_header("SQL Data Analysis", class = "bg-primary text-white"),
+        navset_card_tab(
+          nav_panel(
+            "Analysis of Kits Data",
+            card(
+              full_screen = TRUE,
+              card_body(
+                
+                plotlyOutput("kits_curve_params_plot") %>% 
+                  withSpinner(type = 4, color = "#0d6efd"),
+                DTOutput("kits_all_data") %>% 
+                  withSpinner(type = 4, color = "#0d6efd"),
+                hr(),
+                hr(),
+                div(
+                  style = "margin-bottom: 10px;", # Добавление отступа между текстом и графиком
+                  p(
+                    "The plot below shows the 4PL model for each lot. Each curve represents the CPS values calculated based on the provided parameters.",
+                    style = "font-size: 1rem; color: #6c757d;" # Настройка стиля текста
+                  )
+                ),
+                plotlyOutput("mcd_kit_plot") %>%
+                  withSpinner(type = 4, color = "#0d6efd"),
+                div(
+                  class = "d-flex justify-content-between align-items-center",
+                  style = "gap: 20px; margin-bottom: 10px;",
+                  div(
+                    style = "flex: 1;",
+                    numericInput("conc_min", "Min Concentration:", value = 0.1, step = 0.1)
+                  ),
+                  div(
+                    style = "flex: 1;",
+                    numericInput("conc_max", "Max Concentration:", value = 500000, step = 1000)
+                  )
+                )
+              )
+            )
+          ),
+          nav_panel(
+            "Analysis of Adjustments Data",
+            card(
+              full_screen = TRUE,
+              card_body(
+                # Таблицы данных
+                div(
+                  class = "mb-4",
+                  DTOutput("adjustments_all_data") %>% 
+                    withSpinner(type = 4, color = "#0d6efd"),
+                  DTOutput("adjustments_grouped_data") %>% 
+                    withSpinner(type = 4, color = "#0d6efd")
+                ),
+                
+                # Разделительная линия
+                hr(),
+                
+                # Заголовок и график
+                div(
+                  class = "mb-4",
+                  plotlyOutput("calibration_plot") %>% 
+                    withSpinner(type = 4, color = "#0d6efd")
+                ),
+                
+                # Таблица с данными для графика
+                div(
+                  class = "mb-4",
+                  DTOutput("calibration_data_table") %>% 
+                    withSpinner(type = 4, color = "#0d6efd")
+                ),
+                
+                # Описание графика
+                div(
+                  style = "margin-bottom: 10px;", 
+                  p(
+                    "The plot below represents the calibration curve. The blue line and points correspond to the Low Adjustor CPS, while the red line and points correspond to the High Adjustor CPS.",
+                    style = "font-size: 1rem; color: #6c757d;"
+                  )
+                ),
+              )
+            )
+          ),
+          nav_panel(
+            "Analysis of Results Data",
+            card(
+              full_screen = TRUE,
+              card_body(
+                DTOutput("results_all_data") %>% 
+                  withSpinner(type = 4, color = "#0d6efd"),
+                DTOutput("results_grouped_data") %>% 
+                  withSpinner(type = 4, color = "#0d6efd")
+              )
+            )
+          ),
+          nav_panel(
+            "Combined Analysis",
+            card(
+              full_screen = TRUE,
+              card_body(
+                DTOutput("sql_detailed_combined_stats") %>% 
+                  withSpinner(type = 4, color = "#0d6efd")
+              )
+            )
+          )
+        )
+      )
+    )
   )
+)
+
+
+
+
+
+
+#---------------------------------------------------* Analyzing Data -> Main Content
+
 )

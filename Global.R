@@ -40,18 +40,32 @@ library(conflicted)
 library(shinyjs)
 library(shinyWidgets)
 library(shinycssloaders)
+library(shinyFeedback)
 
 # Обработка математических операций и форматирование
 library(glue)
 library(magrittr)
 
+library(pool)
+
 conflicted::conflicts_prefer(dplyr::filter)
 
+
+library(colorspace)
+
+
+# Цвета Siemens Healthineers
+magenta <- "#E31C79"  # Исходный цвет
+
+magenta_rgb <- col2rgb(magenta)
 
 # Цвета Siemens Healthineers
 sh_colors <- list(
   petrol = "#009999",    
-  magenta = "#E31C79",   
+  magenta = magenta,  
+  less_bright_magenta <- lighten(darken(magenta, amount = 0.2), amount = 0.1),
+  transparent_magenta <- scales::alpha(magenta, 0.7),
+  less_bright_rgb <- magenta_rgb * 0.8,
   orange = "#FF8C00",    
   gray = "#808080",      
   light_gray = "#F5F5F5", 
@@ -75,8 +89,8 @@ my_theme <- bs_theme(
   base_font_size = "0.875rem",        # Базовый размер шрифта
   "input-font-size" = "0.8rem",       # Размер шрифта для input элементов
   "btn-font-size" = "1rem",         # Размер шрифта для кнопок
-  "card-title-font-size" = "1.6rem",    # Размер шрифта заголовков карточек
-  "navbar-font-size" = "1rem",        # Размер шрифта в навигационной панели
+  "card-title-font-size" = "1.4rem",    # Размер шрифта заголовков карточек
+  "navbar-font-size" = "1.4rem",        # Размер шрифта в навигационной панели
   "table-font-size" = "0.8rem"        # Размер шрифта в таблицах
 )
 
@@ -89,3 +103,15 @@ tests <- list(
   "Other" = c("RTH", "TU", "F4", "VF4", "TK9", "ECP", "SPE", "TIE", "TOP", "SP4",
               "SPG", "FER", "FOL", "EPN", "VB", "INS", "PEP", "GAS", "BMG", "ALB")
 )
+
+
+
+
+# Глобальная таблица type_of_reaction
+type_of_reaction_global <- reactiveVal(data.frame(
+  Test = character(),
+  `Formula Number` = integer(),
+  Type = character(),
+  stringsAsFactors = FALSE
+))
+

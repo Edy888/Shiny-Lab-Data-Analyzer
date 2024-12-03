@@ -46,11 +46,13 @@ all_adjustment <- openxlsx::read.xlsx('c:/Users/Eduard/Desktop/My_Projects/10. S
 
 names(all_adjustment)
 str(all_adjustment)
+
+
 ```
 
 -   
 
-    -   `kits` : информация из вкладки **НАБОРЫ** с коэффициентами
+    -   `kits` : информация из вкладки **НАБОРЫ** с коэффициентам
 
 ```{r kits}
 
@@ -64,9 +66,22 @@ kits_cols <- c(
   164, 165, 168, 169, 170, 171, 172
 )
 
-kits <- openxlsx::read.xlsx('c:/Users/Eduard/Desktop/My_Projects/10. Shiny App/1. 4PL/data/kits/m6_1.xlsx', cols = kits_cols)
+SQL_kits <- "INSERT IGNORE INTO kits_data_sql (id_lab, sn, Full_Test_Name, Reagent_Name, Kit_Lot, Bead_Lot,
+              Num_Of_Adjustors, Adjustment_Method, Adjustor_Lot_1, Adjustor_Lot_2,
+              Adjustor_Concentration_1, Adjustor_Concentration_2, Times_Adjusted,
+              Curve_Parameter_1, Curve_Parameter_2, Curve_Parameter_3, Curve_Parameter_4,
+              Curve_Parameter_5, Curve_Parameter_6, Curve_Parameter_7, Curve_Parameter_8,
+              Dose_Parameter_1, Dose_Parameter_2, Dose_Parameter_3, Dose_Parameter_4,
+              Dose_Parameter_5, Dose_Parameter_6, Dose_Parameter_7, Dose_Parameter_8,
+              Kit_Expiration, Adjust_Frequency, Assay_Max, Assay_Min,
+              Default_Units, Reported_Units, Pre_Dilution_Factor, CPS_Cutoff, file_source) VALUES"
+
+kits_cols_short <- c(1,2,4,8,13,14,18,19,20,21, 33,34, 46,47,51:54, 62:69, 82:89, 102,105,108,109,134,137, 139:146, 164, 165)
+
+kits <- openxlsx::read.xlsx('c:/Users/Eduard/Desktop/My_Projects/10. Shiny App/1. 4PL/data/kits/m6_1.xlsx', cols = kits_cols_short)
 
 str(kits)
+summary(kits)
 ```
 
 -   
@@ -78,7 +93,7 @@ library(openxlsx)
 
 col_results <- c(1, 2, 3, 4, 6,	7, 10, 11, 20,	21,	25,	26,	29,	33,	34,	35,	41,	54,	55,	59,	60,	61,	78)
 
-all_results <- openxlsx::read.xlsx('c:/Users/Eduard/Desktop/My_Projects/10. Shiny App/1. 4PL/data/results_lab/m6_1.xlsx', cols = col_results)
+all_results <- openxlsx::read.xlsx('c:/Users/Eduard/Desktop/My_Projects/10. Shiny App/1. 4PL/data/results_lab/m6_N5521_1.xlsx', cols = col_results)
 
 all_results <- all_results |> 
   mutate(
@@ -416,3 +431,68 @@ rv$calib_data = list(
 
     -   Хранит данные для `Kits`, включая необработанные данные и их обновленное время.
 :::
+
+# types_of_rections
+
+```{r}
+library(openxlsx)
+
+types <- readxl::read_xlsx("c:/Users/Eduard/Desktop/My_Projects/10. Shiny App/1. 4PL/data/4. Types/types_of_reactions.xlsx")
+
+types <- types %>%
+  filter(!is.na(Formula_Number)) |> 
+  mutate(Formula_Number = as.numeric(Formula_Number)) |> 
+  distinct(Test, .keep_all = TRUE)
+
+
+# Функция для соединения с SQL
+mysql_conn <- function() { 
+  dbConnect(
+    RMySQL::MySQL(),
+    dbname = "shiny_app_db",
+    host = "127.0.0.1",
+    port = 3306,
+    user = "root",
+    password = "Winter1986+!",
+    client.flag = CLIENT_LOCAL_FILES
+  )
+}
+# 2. Устанавливаем соединение
+conn <- mysql_conn()
+
+save_to_sql <- function(data) {
+  tryCatch({
+    conn <- mysql_conn()  # Устанавливаем соединение
+    
+    # Формируем запрос для вставки данных
+    values <- paste(
+      apply(data, 1, function(row) {
+        sprintf("('%s', %d, '%s')", 
+                dbEscapeStrings(conn, row["Test"]),
+                as.numeric(row["Formula_Number"]),
+                dbEscapeStrings(conn, row["Type"]))
+      }),
+      collapse = ", "
+    )
+    
+    query <- sprintf(
+      "INSERT INTO type_of_reaction (Test, Formula_Number, Type) VALUES %s",
+      values
+    )
+    
+    dbExecute(conn, query)  # Выполняем запрос
+    message("Data successfully saved to SQL!")
+  }, error = function(e) {
+    message("Error saving data to SQL: ", e$message)
+  }, finally = {
+    if (exists("conn") && !is.null(conn)) {
+      dbDisconnect(conn)  # Закрываем соединение
+    }
+  })
+}
+
+
+save_to_sql(types)
+
+
+```
